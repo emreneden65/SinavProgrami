@@ -73,8 +73,9 @@ namespace SinavProgrami
         // Bölüm bazlı Hata Oranı (%) — sınava gelmeyecek potansiyel kişi yüzdesi
         private readonly Dictionary<string, double> _bolumHataOranlari = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
-        // Matris görünüm için salon listesi cache
-        private List<Salon> _cachedSalonlar = new List<Salon>();
+        // Kullanıcının 'Derslik Listesi Yükle' ile yüklediği derslikler — salonların TEK kaynağı.
+        // Veritabanında tutulmaz (her okulun derslikleri farklıdır); oturum kaydında saklanır.
+        private List<Salon> _derslikler = new List<Salon>();
 
         // Gözetmen (Araştırma Görevlisi) listesi — Excel'den yüklenir, Ağırlık gridden düzenlenir
         private readonly List<Gozetmen> _gozetmenListesi = new List<Gozetmen>();
@@ -105,11 +106,53 @@ namespace SinavProgrami
             // accordion kurulamasa bile (aşağıdaki catch) kullanıcı tip seçebilsin.
             SinavTipiKontrolleriniKur();
 
+            // Gözetmen listesinin uygulama içinden düzenlenmesi (Ekle / Sil) — accordion'dan önce
+            GozetmenDuzenlemeKontrolleriniKur();
+
             // Sol paneli açılır/kapanır (accordion) kutucuklara çevir + sağ paneli gizle
             try { AkordeonKur(); } catch { /* accordion kurulamazsa düz yerleşim kalır */ }
 
             // Tüm başlangıç mantığı form tamamen yüklendikten sonra çalışsın
             this.Shown += MainForm_Shown;
+            this.FormClosing += MainForm_FormClosing;
+            this.Resize += PencereBoyutuDegisti;
+        }
+
+        private FormWindowState _oncekiPencereDurumu = FormWindowState.Normal;
+
+        /// <summary>Sonuç paneli kullanıcı değil tam ekrana geçiş tarafından mı açıldı?</summary>
+        private bool _panelTamEkrandaAcildi;
+
+        /// <summary>
+        /// Tam ekrana geçilince sonuç paneli kapalıysa açılır — sol panel sabit genişlikte
+        /// olduğundan aksi halde ekranın sağı boş kalırdı. Normal boyuta dönünce bu şekilde
+        /// açılan panel yine kapanır; kullanıcının açtığı panel için pencere genişletilir
+        /// (aksi halde panel sağda ince bir şerit olarak sıkışırdı).
+        /// </summary>
+        private void PencereBoyutuDegisti(object sender, EventArgs e)
+        {
+            var onceki = _oncekiPencereDurumu;
+            _oncekiPencereDurumu = WindowState;
+            if (btnSagToggle == null || WindowState == onceki) return;
+
+            if (WindowState == FormWindowState.Maximized && !panelSag.Visible)
+            {
+                btnSagToggle.PerformClick();
+                _panelTamEkrandaAcildi = true;
+            }
+            else if (WindowState == FormWindowState.Normal && onceki == FormWindowState.Maximized && panelSag.Visible)
+            {
+                if (_panelTamEkrandaAcildi) btnSagToggle.PerformClick();
+                else SonucPaneliIcinGenislet();
+            }
+        }
+
+        /// <summary>Sonuç paneli açıkken normal boyuttaki pencere dar kalmışsa (ekrana sığdığı kadar) genişletir.</summary>
+        private void SonucPaneliIcinGenislet()
+        {
+            if (WindowState != FormWindowState.Normal || ClientSize.Width >= 1300) return;
+            int ekranaSigan = Screen.FromControl(this).WorkingArea.Width - (Width - ClientSize.Width);
+            ClientSize = new Size(Math.Min(1300, ekranaSigan), ClientSize.Height);
         }
 
         private void MainForm_Shown(object sender, EventArgs e)
@@ -117,8 +160,201 @@ namespace SinavProgrami
             // İlk açılışta sadece bir kez çalışsın
             this.Shown -= MainForm_Shown;
 
-            VeritabaniniKontrolEt();
-            PrepopulateDefaultCalendar();
+            // Önceki oturum varsa kaldığı yerden devam; yoksa varsayılan takvim
+            if (!OturumuGeriYukle())
+                PrepopulateDefaultCalendar();
+            DerslikDurumunuGoster();
+            OturumKaydiniBaslat();
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  OTURUM KAYDI — uygulama kapatılıp açılınca kaldığı yerden devam eder.
+        //  Çalışma durumu birkaç saniyede bir (değiştiyse) ve kapanışta
+        //  %AppData%\SinavProgrami\oturum.json'a yazılır; açılışta geri yüklenir.
+        // ══════════════════════════════════════════════════════════════
+        private const int OturumKayitAraligiMs = 15000;
+        private System.Windows.Forms.Timer _oturumZamanlayici;
+        private string _sonKaydedilenOturum;
+
+        /// <summary>Adım kilidi taşıyan butonlar — açık/kapalı durumları oturumla birlikte saklanır.</summary>
+        private Button[] AdimButonlari => new[]
+        {
+            btnSablonOlustur, btnOtomatikDagit, btnSalonAta, btnSalonExport,
+            btnGozetmenAta, btnMatrisExport, btnGozetmenliYukle, btnFinalExport
+        };
+
+        private void OturumKaydiniBaslat()
+        {
+            _oturumZamanlayici = new System.Windows.Forms.Timer { Interval = OturumKayitAraligiMs };
+            _oturumZamanlayici.Tick += (s, e) => OturumuKaydet(hataGoster: false);
+            _oturumZamanlayici.Start();
+        }
+
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            _oturumZamanlayici?.Stop();
+
+            // Yazılıp henüz onaylanmamış hücre düzenlemeleri modele işlensin
+            foreach (var grid in new[] { dgvDersler, dgvHataOrani, dgvGozetmenler, dgvSablon, dgvMatris })
+                if (grid.IsCurrentCellInEditMode) grid.EndEdit();
+
+            OturumuKaydet(hataGoster: true);
+        }
+
+        /// <summary>Durum son kayıttan farklıysa diske yazar.</summary>
+        private void OturumuKaydet(bool hataGoster)
+        {
+            try
+            {
+                string json = OturumKaydi.Serilestir(OturumDurumunuTopla());
+                if (json == _sonKaydedilenOturum) return;
+                OturumKaydi.Yaz(json);
+                _sonKaydedilenOturum = json;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Oturum kaydedilemedi: {ex.Message}");
+                if (hataGoster)
+                    MessageBox.Show($"Çalışma durumu kaydedilemedi; bir sonraki açılışta kaldığınız yerden devam edilemeyebilir.\n\n{ex.Message}",
+                        "Oturum Kaydı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private OturumDurumu OturumDurumunuTopla() => new OturumDurumu
+        {
+            Derslikler = _derslikler.ToList(),
+            Dersler = _dersListesi.ToList(),
+            Takvim = _takvimSlotlari.OrderBy(kv => kv.Key)
+                .Select(kv => new TakvimGunu { Gun = kv.Key, Saatler = kv.Value.ToList() })
+                .ToList(),
+            SinavTipi = _sinavTipi,
+            BaslangicTarihi = dtpSinavBaslangic?.Value.Date,
+            Havuzlar = _sablonHavuzlari.ToList(),
+            OrtakSecimYapildi = _ortakSecimYapildi,
+            ManuelOrtakKodlar = _manuelOrtakKodlar.ToList(),
+            ManuelOrtakDersAdlari = _manuelOrtakDersAdlari.ToList(),
+            UygulamaliDersler = _uygulamaliDersler.ToList(),
+            HataOranlari = new Dictionary<string, double>(_bolumHataOranlari),
+            SablonSonuclari = _sablonSonuclari,
+            SablonIntNotlari = new Dictionary<string, string>(_sablonIntNotlari),
+            GunSalonSatirlari = _gunSalonSatirlari,
+            SonSonuclar = _sonSonuclar,
+            Gozetmenler = _gozetmenListesi.ToList(),
+            Butonlar = AdimButonlari.ToDictionary(b => b.Name, b => b.Enabled),
+            SeciliSekme = tabControlSonuc.SelectedIndex,
+            SonucPaneliAcik = panelSag.Visible,
+            PencereTamEkran = WindowState == FormWindowState.Maximized,
+            // Tam ekran / simge durumundayken normal boyut RestoreBounds'tadır
+            PencereGenislik = (WindowState == FormWindowState.Normal ? Bounds : RestoreBounds).Width,
+            PencereYukseklik = (WindowState == FormWindowState.Normal ? Bounds : RestoreBounds).Height
+        };
+
+        /// <summary>Kayıtlı oturumu belleğe ve ekrana geri yükler; kayıt yoksa false döner.</summary>
+        private bool OturumuGeriYukle()
+        {
+            var d = OturumKaydi.Oku(out string okumaHatasi);
+            if (d == null)
+            {
+                if (okumaHatasi != null)
+                    MessageBox.Show("Önceki oturum dosyası okunamadı, uygulama boş açılıyor.\n\n" +
+                        $"{okumaHatasi}\n\nDosya şuraya yedeklendi:\n{OturumKaydi.BozukYedekYolu}",
+                        "Oturum Geri Yüklenemedi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            try
+            {
+                // ── Bellek durumu ──
+                _derslikler = (d.Derslikler ?? new List<Salon>()).ToList();
+                _dersListesi.Clear();
+                _dersListesi.AddRange(d.Dersler ?? new List<Ders>());
+
+                _takvimSlotlari.Clear();
+                foreach (var t in d.Takvim ?? new List<TakvimGunu>())
+                    _takvimSlotlari[t.Gun.Date] = t.Saatler ?? new List<string>();
+                _sinavTipi = d.SinavTipi;
+
+                _sablonHavuzlari.Clear();
+                _sablonHavuzlari.AddRange(d.Havuzlar ?? new List<DersHavuzu>());
+                _ortakSecimYapildi = d.OrtakSecimYapildi;
+                _manuelOrtakKodlar.Clear();
+                _manuelOrtakKodlar.UnionWith(d.ManuelOrtakKodlar ?? new List<string>());
+                _manuelOrtakDersAdlari.Clear();
+                _manuelOrtakDersAdlari.UnionWith(d.ManuelOrtakDersAdlari ?? new List<string>());
+                _uygulamaliDersler.Clear();
+                _uygulamaliDersler.UnionWith(d.UygulamaliDersler ?? new List<string>());
+                _bolumHataOranlari.Clear();
+                foreach (var kv in d.HataOranlari ?? new Dictionary<string, double>())
+                    _bolumHataOranlari[kv.Key] = kv.Value;
+
+                _sablonSonuclari = d.SablonSonuclari;
+                _sablonIntNotlari.Clear();
+                foreach (var kv in d.SablonIntNotlari ?? new Dictionary<string, string>())
+                    _sablonIntNotlari[kv.Key] = kv.Value;
+                _gunSalonSatirlari = d.GunSalonSatirlari;
+                _sonSonuclar = d.SonSonuclar;
+
+                _gozetmenListesi.Clear();
+                _gozetmenListesi.AddRange(d.Gozetmenler ?? new List<Gozetmen>());
+
+                // ── Ekran ──
+                DersGridiGuncelle();
+                UygulamaliDersGridiniGuncelle();   // hata oranı grid'ini de yeniler
+                GozetmenGridiniGuncelle();
+
+                if (cmbSinavTipi != null)
+                    cmbSinavTipi.SelectedIndex = _sinavTipi == SinavDonemTipi.Final ? 1 : 0;
+                if (dtpSinavBaslangic != null && d.BaslangicTarihi.HasValue)
+                    dtpSinavBaslangic.Value = d.BaslangicTarihi.Value;
+                UpdateCalendarBoldedDates();
+                DateTime ilkGun = _takvimSlotlari.Count > 0 ? _takvimSlotlari.Keys.Min() : DateTime.Today;
+                calendarSinav.SetDate(ilkGun);
+                UpdateZamanPaneli(ilkGun);
+
+                if (_sablonSonuclari != null)
+                    try { SablonGorunumuOlustur(); } catch { /* görünüm opsiyonel */ }
+                if (_sonSonuclar != null)
+                    try { SonuclariGoster(_sonSonuclar); MatrisGorunumuOlustur(_sonSonuclar, _derslikler); } catch { /* görünüm opsiyonel */ }
+
+                foreach (var b in AdimButonlari)
+                    if (d.Butonlar != null && d.Butonlar.TryGetValue(b.Name, out bool etkin))
+                        b.Enabled = etkin;
+
+                if (d.SeciliSekme >= 0 && d.SeciliSekme < tabControlSonuc.TabCount)
+                    tabControlSonuc.SelectedIndex = d.SeciliSekme;
+
+                // Pencere: son normal boyut + tam ekran (eski kayıtlarda boyut 0 → atlanır).
+                // Panel durumundan ÖNCE uygulanır: tam ekrana geçiş paneli otomatik açar,
+                // ardından kaydedilmiş panel durumu geçerli olur.
+                if (d.PencereGenislik >= MinimumSize.Width && d.PencereYukseklik >= MinimumSize.Height)
+                {
+                    var alan = Screen.FromControl(this).WorkingArea;
+                    Size = new Size(Math.Min(d.PencereGenislik, alan.Width), Math.Min(d.PencereYukseklik, alan.Height));
+                    CenterToScreen();
+                }
+                if (d.PencereTamEkran)
+                    WindowState = FormWindowState.Maximized;
+
+                if (btnSagToggle != null && panelSag.Visible != d.SonucPaneliAcik)
+                    btnSagToggle.PerformClick();
+                _panelTamEkrandaAcildi = false;   // geri yüklenen panel durumu kullanıcının tercihidir
+
+                _sonKaydedilenOturum = OturumKaydi.Serilestir(OturumDurumunuTopla());
+
+                var zaman = OturumKaydi.SonKayitZamani;
+                lblDurum.Text = "↩ Önceki oturum geri yüklendi" +
+                                (zaman.HasValue ? $" (son kayıt: {zaman:dd.MM.yyyy HH:mm})" : "") +
+                                " — kaldığınız yerden devam edebilirsiniz.";
+                lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
+            }
+            catch (Exception ex)
+            {
+                try { File.Copy(OturumKaydi.DosyaYolu, OturumKaydi.BozukYedekYolu, overwrite: true); } catch { }
+                MessageBox.Show("Önceki oturum tam olarak geri yüklenemedi.\n\n" +
+                    $"{ex.Message}\n\nKayıt dosyası şuraya yedeklendi:\n{OturumKaydi.BozukYedekYolu}",
+                    "Oturum Geri Yükleme", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            return true;
         }
 
         // ══════════════════════════════════════════════════════════════
@@ -176,7 +412,8 @@ namespace SinavProgrami
                 ("⏰ Sınav Takvimi ve Saat Ayarları", new Control[]{ separator, lblZamanBaslik,
                     lblSinavTipi, cmbSinavTipi, dtpSinavBaslangic, btnTakvimDoldur,
                     calendarSinav, chkGunEtkin, flowSaatler }),
-                ("🧑‍🏫 Gözetmenler Slotu", new Control[]{ lblGozetmenBaslik, btnGozetmenYukle, dgvGozetmenler }),
+                ("🧑‍🏫 Gözetmenler Slotu", new Control[]{ lblGozetmenBaslik, btnGozetmenYukle,
+                    btnGozetmenEkle, btnGozetmenSil, dgvGozetmenler }),
             };
 
             foreach (var bl in bolumler)
@@ -261,10 +498,9 @@ namespace SinavProgrami
             btnSagToggle.FlatAppearance.BorderSize = 0;
             btnSagToggle.Click += (s, e) =>
             {
+                _panelTamEkrandaAcildi = false;   // kullanıcı kendisi açtı / kapattı
                 panelSag.Visible = !panelSag.Visible;
-                // Sonuç panelini açınca form dar kalmışsa genişlet
-                if (panelSag.Visible && ClientSize.Width < 1300)
-                    ClientSize = new Size(1300, ClientSize.Height);
+                if (panelSag.Visible) SonucPaneliIcinGenislet();
             };
             panelSol.Controls.Add(btnSagToggle);
             btnSagToggle.BringToFront();
@@ -356,8 +592,8 @@ namespace SinavProgrami
         private Button btnDerslikYukle;
 
         /// <summary>
-        /// Derslik Excel'ini okur, değişiklik özetini gösterir ve onaylanırsa veritabanındaki
-        /// salon listesini TAMAMEN bununla değiştirir (listede olmayan eski salonlar silinir).
+        /// Derslik Excel'ini okur, değişiklik özetini gösterir ve onaylanırsa mevcut derslik
+        /// listesini TAMAMEN bununla değiştirir (listede olmayan eski derslikler çıkar).
         /// </summary>
         private void BtnDerslikYukle_Click(object sender, EventArgs e)
         {
@@ -379,9 +615,7 @@ namespace SinavProgrami
                     }
 
                     // Mevcut liste ile karşılaştır
-                    List<Salon> eski;
-                    try { eski = DatabaseHelper.SalonlariGetir(); } catch { eski = new List<Salon>(); }
-                    var eskiMap = eski.GroupBy(s => s.SalonKodu.Trim(), StringComparer.OrdinalIgnoreCase)
+                    var eskiMap = _derslikler.GroupBy(s => s.SalonKodu.Trim(), StringComparer.OrdinalIgnoreCase)
                                       .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
                     var yeniKodlar = new HashSet<string>(okuma.Salonlar.Select(s => s.SalonKodu), StringComparer.OrdinalIgnoreCase);
 
@@ -412,17 +646,7 @@ namespace SinavProgrami
                     if (MessageBox.Show(ozet, "Derslik Listesi — Onay", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
                         != DialogResult.Yes) return;
 
-                    DatabaseHelper.SalonlariKaydet(okuma.Salonlar, oncekileriSil: true);
-                    _cachedSalonlar = DatabaseHelper.SalonlariGetir();
-                    VeritabaniniKontrolEt();
-
-                    // Salonlar değişti → önceki salon/gözetmen sonuçları artık geçersiz
-                    btnSalonExport.Enabled = false; btnGozetmenAta.Enabled = false;
-                    btnMatrisExport.Enabled = false; btnGozetmenliYukle.Enabled = false; btnFinalExport.Enabled = false;
-
-                    lblDurum.Text = $"✅ Derslik listesi güncellendi: {okuma.Salonlar.Count} derslik. " +
-                                    "Salon ataması yaptıysanız 'Salonları Ata'yı yeniden çalıştırın.";
-                    lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
+                    DerslikListesiniUygula(okuma.Salonlar);
                 }
                 catch (Exception ex)
                 {
@@ -655,33 +879,54 @@ namespace SinavProgrami
         }
 
         /// <summary>
-        /// Veritabanı bağlantısını SADECE Salonlar için test eder.
-        /// Dersler artık SQL'den çekilmez, tek kaynak Excel'dir.
+        /// Onaylanan derslik listesini geçerli liste yapar. Liste yalnızca bellekte ve
+        /// oturum kaydında tutulur — veritabanına yazılmaz.
         /// </summary>
-        private void VeritabaniniKontrolEt()
+        private void DerslikListesiniUygula(List<Salon> yeniDerslikler)
         {
-            try
+            // Kapasiteye göre artan sıra (eski veritabanı okumasıyla aynı sıra korunur)
+            _derslikler = yeniDerslikler.OrderBy(s => s.Kapasite).ToList();
+            DerslikDurumunuGoster();
+            if (_sablonSonuclari != null)
             {
-                if (DatabaseHelper.BaglantiyiTest())
-                {
-                    var salonlar = DatabaseHelper.SalonlariGetir();
-                    _cachedSalonlar = salonlar;
-
-                    if (salonlar.Count == 0)
-                    {
-                        // Yeni bir bilgisayarda ilk açılış: veritabanı oluştu ama salon listesi boş.
-                        lblDbDurum.Text = "⚠️ Veritabanı hazır ama salon kaydı yok — Baslangic\\Salonlar.csv dosyasını doldurun";
-                        lblDbDurum.ForeColor = Color.FromArgb(249, 226, 175);
-                    }
-                    else
-                    {
-                        lblDbDurum.Text = $"✅ Veritabanı bağlı — {salonlar.Count} salon bulundu (Salonlar için)";
-                        lblDbDurum.ForeColor = Color.FromArgb(166, 227, 161);
-                    }
-                }
-                else { lblDbDurum.Text = "❌ Veritabanı bağlantısı başarısız! (Salonlar alınamayacak)"; lblDbDurum.ForeColor = Color.FromArgb(243, 139, 168); }
+                // Şablondaki slot kapasite kontrolü yeni dersliklerle yapılsın
+                SablonDogrulayiciKur();
+                SablonDogrulaVeBoya();
             }
-            catch (Exception ex) { lblDbDurum.Text = $"❌ Hata: {ex.Message}"; lblDbDurum.ForeColor = Color.FromArgb(243, 139, 168); }
+
+            // Salonlar değişti → önceki salon/gözetmen sonuçları artık geçersiz
+            btnSalonExport.Enabled = false; btnGozetmenAta.Enabled = false;
+            btnMatrisExport.Enabled = false; btnGozetmenliYukle.Enabled = false; btnFinalExport.Enabled = false;
+
+            lblDurum.Text = $"✅ Derslik listesi güncellendi: {_derslikler.Count} derslik. " +
+                            "Salon ataması yaptıysanız 'Salonları Ata'yı yeniden çalıştırın.";
+            lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
+        }
+
+        /// <summary>Alt durum satırında yüklü derslik listesinin özetini gösterir.</summary>
+        private void DerslikDurumunuGoster()
+        {
+            if (_derslikler.Count == 0)
+            {
+                lblDbDurum.Text = "⚠️ Derslik listesi yüklenmedi — '🏫 Derslik Listesi Yükle' ile okulunuzun dersliklerini yükleyin";
+                lblDbDurum.ForeColor = Color.FromArgb(249, 226, 175);
+                return;
+            }
+            int uyg = _derslikler.Count(s => s.UygulamaliMi);
+            lblDbDurum.Text = $"✅ {_derslikler.Count} derslik yüklü ({_derslikler.Count - uyg} normal, {uyg} uygulamalı) — " +
+                              $"toplam kapasite {_derslikler.Sum(s => s.Kapasite)}";
+            lblDbDurum.ForeColor = Color.FromArgb(166, 227, 161);
+        }
+
+        /// <summary>Derslik gerektiren adımlardan önce çağrılır; liste boşsa kullanıcıyı uyarır.</summary>
+        private bool DersliklerYukluMu()
+        {
+            if (_derslikler.Count > 0) return true;
+            MessageBox.Show("Derslik listesi yüklenmemiş!\n\n" +
+                "Önce sağdaki '0 · DERSLİKLER' bölümünden '🏫 Derslik Listesi Yükle' ile " +
+                "okulunuzun derslik Excel'ini yükleyin.",
+                "Derslik Listesi Gerekli", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
         }
 
         // =============================================
@@ -1001,6 +1246,9 @@ namespace SinavProgrami
                     return;
                 }
 
+                // Gün sayfalarının salon sütunları derslik listesinden kurulur
+                if (!DersliklerYukluMu()) return;
+
                 using (var dlg = new SaveFileDialog())
                 {
                     dlg.Filter = "Excel Dosyası (*.xlsx)|*.xlsx";
@@ -1013,7 +1261,7 @@ namespace SinavProgrami
                     lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
                     Application.DoEvents();
 
-                    CekilmisDerslerExportHelper.Olustur(_dersListesi, _takvimSlotlari, dlg.FileName, out var uyarilar);
+                    CekilmisDerslerExportHelper.Olustur(_dersListesi, _takvimSlotlari, dlg.FileName, out var uyarilar, derslikler: _derslikler);
 
                     lblDurum.Text = "✅ Şablon oluşturuldu. İndirip 'Sınav Haftası Dağıtım Şablonu'nu doldurun.";
                     lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
@@ -1077,16 +1325,9 @@ namespace SinavProgrami
                     return;
                 }
 
-                // Normal salon kapasitesi (Kural 2 için) — DB'den
-                List<Salon> salonlar;
-                try { salonlar = DatabaseHelper.SalonlariGetir(); _cachedSalonlar = salonlar; }
-                catch (Exception dbEx)
-                {
-                    MessageBox.Show($"Salon bilgileri alınamadı (Kural 2 kapasite kontrolü için gerekli):\n{dbEx.Message}",
-                        "DB Hatası", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-                int normalKapasite = salonlar.Where(s => !s.UygulamaliMi).Sum(s => s.Kapasite);
+                // Normal salon kapasitesi (Kural 2 için) — yüklenen derslik listesinden
+                if (!DersliklerYukluMu()) return;
+                int normalKapasite = _derslikler.Where(s => !s.UygulamaliMi).Sum(s => s.Kapasite);
 
                 lblDurum.Text = "⏳ Dersler kurallara göre dağıtılıyor...";
                 lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
@@ -1108,7 +1349,7 @@ namespace SinavProgrami
 
                     if (dlg.ShowDialog() != DialogResult.OK) return;
 
-                    CekilmisDerslerExportHelper.Olustur(_dersListesi, _takvimSlotlari, dlg.FileName, out var uyarilar, dagitim);
+                    CekilmisDerslerExportHelper.Olustur(_dersListesi, _takvimSlotlari, dlg.FileName, out var uyarilar, dagitim, _derslikler);
 
                     var tumUyarilar = new List<string>();
                     if (algo.Uyarilar != null) tumUyarilar.AddRange(algo.Uyarilar);
@@ -1727,11 +1968,8 @@ namespace SinavProgrami
                     return;
                 }
 
-                lblDurum.Text = "⏳ Salonlar çekiliyor..."; lblDurum.ForeColor = Color.FromArgb(249, 226, 175); Application.DoEvents();
-                List<Salon> salonlar;
-                try { salonlar = DatabaseHelper.SalonlariGetir(); _cachedSalonlar = salonlar; }
-                catch (Exception dbEx) { MessageBox.Show($"Salon bilgileri alınamadı:\n{dbEx.Message}", "DB Hatası", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
-                if (salonlar.Count == 0) { MessageBox.Show("Veritabanında salon bulunamadı!", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                if (!DersliklerYukluMu()) return;
+                var salonlar = _derslikler;
 
                 lblDurum.Text = $"⏳ Salon dağıtımı yapılıyor (ortak önce, ELM+MEK → T4)..."; Application.DoEvents();
 
@@ -1804,7 +2042,7 @@ namespace SinavProgrami
 
                     lblDurum.Text = "⏳ Salon atanmış dosya oluşturuluyor..."; lblDurum.ForeColor = Color.FromArgb(249, 226, 175); Application.DoEvents();
 
-                    GunSalonMatrisExportHelper.YazVeKaydet(_gunSalonSatirlari, _cachedSalonlar, _sablonSonuclari, _takvimSlotlari, dlg.FileName);
+                    GunSalonMatrisExportHelper.YazVeKaydet(_gunSalonSatirlari, _derslikler, _sablonSonuclari, _takvimSlotlari, dlg.FileName);
 
                     lblDurum.Text = "✅ Salon atanmış dosya oluşturuldu. Gerekirse elle düzenleyip 'Gözetmenler için Dosya Yükle' ile verin.";
                     lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
@@ -1852,13 +2090,10 @@ namespace SinavProgrami
                         return;
                     }
 
-                    // Salonları da tazele (kapasite/tip için)
-                    try { _cachedSalonlar = DatabaseHelper.SalonlariGetir(); } catch { }
-
                     _sonSonuclar = okuma.Atamalar;
                     // Bu dosyada hoca kolonu yok — Öğretim Elemanı kalıcı eşlemeden tamamlanır
                     OgretimElemanlariniDoldur(_sonSonuclar);
-                    try { SonuclariGoster(_sonSonuclar); MatrisGorunumuOlustur(_sonSonuclar, _cachedSalonlar); } catch { }
+                    try { SonuclariGoster(_sonSonuclar); MatrisGorunumuOlustur(_sonSonuclar, _derslikler); } catch { }
 
                     btnGozetmenAta.Enabled = true;
                     btnGozetmenliYukle.Enabled = false; btnFinalExport.Enabled = false;
@@ -1937,7 +2172,7 @@ namespace SinavProgrami
         private void SablonDogrulayiciKur()
         {
             _sablonDogrulayici = new SablonDogrulayici(
-                _takvimSlotlari, _cachedSalonlar, _uygulamaliDersler, HataOranlariniOku(), 1);
+                _takvimSlotlari, _derslikler, _uygulamaliDersler, HataOranlariniOku(), 1);
         }
 
         /// <summary>
@@ -2755,8 +2990,8 @@ namespace SinavProgrami
                     return;
                 }
 
-                // Salonları alfabetik sırala
-                var siraliSalonlar = salonlar.OrderBy(s => s.SalonKodu).ToList();
+                // Salon sırası Excel çıktılarıyla aynı: T4 binası önce, sonra kod
+                var siraliSalonlar = GunSalonMatrisExportHelper.T4OnceSirala(salonlar, s => s.SalonKodu).ToList();
                 var salonKodlari = siraliSalonlar.Select(s => s.SalonKodu).ToList();
 
                 // Sabit sütunları ekle
@@ -3148,15 +3383,9 @@ namespace SinavProgrami
                     return;
                 }
 
-                // Salonları getir
-                List<Salon> salonlar;
-                if (_cachedSalonlar.Count > 0)
-                    salonlar = _cachedSalonlar;
-                else
-                {
-                    try { salonlar = DatabaseHelper.SalonlariGetir(); }
-                    catch (Exception dbEx) { MessageBox.Show($"Salon bilgileri alınamadı:\n{dbEx.Message}", "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
-                }
+                // Çıktının salon sütunları yüklenen derslik listesinden gelir
+                if (!DersliklerYukluMu()) return;
+                var salonlar = _derslikler;
 
                 using (var dlg = new SaveFileDialog
                 {
@@ -3241,7 +3470,7 @@ namespace SinavProgrami
 
                     GozetmenGridiniGuncelle();
                     SonuclariGoster(_sonSonuclar);
-                    try { MatrisGorunumuOlustur(_sonSonuclar, _cachedSalonlar); } catch { /* görünüm opsiyonel */ }
+                    try { MatrisGorunumuOlustur(_sonSonuclar, _derslikler); } catch { /* görünüm opsiyonel */ }
 
                     btnFinalExport.Enabled = guncellenen > 0;
 
@@ -3301,7 +3530,8 @@ namespace SinavProgrami
             try
             {
                 var onay = MessageBox.Show(
-                    "⚠ DİKKAT!\n\nUyguladaki tüm dersler, takvim ve sonuçlar temizlenecektir!\n" +
+                    "⚠ DİKKAT!\n\nUyguladaki tüm dersler, takvim, sonuçlar, derslik listesi ve ayarlar\n" +
+                    "(havuz, ortak ders, uygulamalı ders, hata oranı) temizlenecektir!\n" +
                     "Bu işlem geri alınamaz.\n\nDevam etmek istiyor musunuz?",
                     "Uygulamayı Sıfırlama Onayı",
                     MessageBoxButtons.YesNo,
@@ -3344,6 +3574,19 @@ namespace SinavProgrami
                 txtDersAra.Text = "";
                 numSinifSeviyesi.Value = 1;
                 numOgrenciSayisi.Value = 50;
+
+                // Ayarlar da fabrika durumuna döner — oturum kaydı sayesinde artık
+                // uygulama kapanınca kendiliğinden silinmiyorlar.
+                _gunSalonSatirlari = null;
+                _sablonHavuzlari.Clear();
+                _ortakSecimYapildi = false;
+                _manuelOrtakKodlar.Clear();
+                _manuelOrtakDersAdlari.Clear();
+                _uygulamaliDersler.Clear();
+                _bolumHataOranlari.Clear();
+                _derslikler = new List<Salon>();
+                DerslikDurumunuGoster();
+                OturumKaydi.Sil();
 
                 PrepopulateDefaultCalendar();
                 UygulamaliDersGridiniGuncelle();
@@ -3560,14 +3803,23 @@ namespace SinavProgrami
             dgvGozetmenler.Columns.Clear();
             dgvGozetmenler.AutoGenerateColumns = false;
 
-            dgvGozetmenler.Columns.Add(new DataGridViewTextBoxColumn { Name = "Kod", HeaderText = "Kod", ReadOnly = true, FillWeight = 10 });
-            dgvGozetmenler.Columns.Add(new DataGridViewTextBoxColumn { Name = "AdSoyad", HeaderText = "Ad Soyad", ReadOnly = true, FillWeight = 30 });
-            dgvGozetmenler.Columns.Add(new DataGridViewTextBoxColumn { Name = "Bolum", HeaderText = "Bölüm", ReadOnly = true, FillWeight = 32 });
+            dgvGozetmenler.Columns.Add(new DataGridViewTextBoxColumn { Name = "Kod", HeaderText = "Kod ✏", ReadOnly = false, FillWeight = 10 });
+            dgvGozetmenler.Columns.Add(new DataGridViewTextBoxColumn { Name = "AdSoyad", HeaderText = "Ad Soyad ✏", ReadOnly = false, FillWeight = 30 });
+            // Bölüm açılır listeden seçilir — elle yazımda algoritmanın tanımayacağı bölüm adı oluşmasın
+            dgvGozetmenler.Columns.Add(new DataGridViewComboBoxColumn
+            {
+                Name = "Bolum", HeaderText = "Bölüm ✏", FillWeight = 32,
+                DisplayStyle = DataGridViewComboBoxDisplayStyle.Nothing, FlatStyle = FlatStyle.Flat
+            });
             dgvGozetmenler.Columns.Add(new DataGridViewTextBoxColumn { Name = "Agirlik", HeaderText = "Ağırlık ✏", ReadOnly = false, FillWeight = 14 });
             dgvGozetmenler.Columns.Add(new DataGridViewTextBoxColumn { Name = "AtananSinavSayisi", HeaderText = "Sınav", ReadOnly = true, FillWeight = 14 });
 
-            // Düzenlenebilir Ağırlık sütunu görsel olarak ayrışsın
-            dgvGozetmenler.Columns["Agirlik"].DefaultCellStyle.BackColor = Color.FromArgb(60, 62, 85);
+            // Düzenlenebilir sütunlar görsel olarak ayrışsın
+            foreach (var ad in new[] { "Kod", "AdSoyad", "Bolum", "Agirlik" })
+                dgvGozetmenler.Columns[ad].DefaultCellStyle.BackColor = Color.FromArgb(60, 62, 85);
+            dgvGozetmenler.Columns["Agirlik"].ToolTipText =
+                "Görev payı — görev sayısı ağırlıkla orantılıdır.\n" +
+                "Örn. ağırlık 1,0 olan 14 sınava giriyorsa 0,5 olan 7 sınava, 2,0 olan 28 sınava girer.";
             dgvGozetmenler.Columns["Agirlik"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
             dgvGozetmenler.Columns["AtananSinavSayisi"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
         }
@@ -3632,8 +3884,18 @@ namespace SinavProgrami
             {
                 dgvGozetmenler.SuspendLayout();
                 dgvGozetmenler.Rows.Clear();
+
+                // Bölüm açılır listesi: satırlardaki her değer listede olmalı (yoksa hücre boş görünür)
+                var bolumKolonu = (DataGridViewComboBoxColumn)dgvGozetmenler.Columns["Bolum"];
+                bolumKolonu.Items.Clear();
+                bolumKolonu.Items.AddRange(GozetmenBolumSecenekleri().ToArray());
+
                 foreach (var g in _gozetmenListesi)
-                    dgvGozetmenler.Rows.Add(g.Kod, g.AdSoyad, g.Bolum, g.Agirlik.ToString("0.0#"), g.AtananSinavSayisi);
+                {
+                    int satir = dgvGozetmenler.Rows.Add(g.Kod, g.AdSoyad, g.Bolum, g.Agirlik.ToString("0.0#"), g.AtananSinavSayisi);
+                    // Satır ↔ gözetmen eşleşmesi Tag ile — sütun sıralaması satır index'ini bozar
+                    dgvGozetmenler.Rows[satir].Tag = g;
+                }
                 dgvGozetmenler.ResumeLayout();
             }
             finally
@@ -3643,31 +3905,413 @@ namespace SinavProgrami
         }
 
         /// <summary>
-        /// Ağırlık sütunu düzenlendiğinde modele yansıtır (0'dan büyük olmalı).
+        /// Kod / Ad Soyad / Bölüm / Ağırlık hücresi düzenlendiğinde modele yansıtır.
+        /// Geçersiz değer girilirse hücre eski haline döner.
         /// </summary>
         private void DgvGozetmenler_CellEndEdit(object sender, DataGridViewCellEventArgs e)
         {
-            if (_isUpdating || e.RowIndex < 0 || e.RowIndex >= _gozetmenListesi.Count) return;
-            if (dgvGozetmenler.Columns[e.ColumnIndex].Name != "Agirlik") return;
+            if (_isUpdating || e.RowIndex < 0) return;
+            var row = dgvGozetmenler.Rows[e.RowIndex];
+            if (!(row.Tag is Gozetmen gozetmen)) return;
+            var cell = row.Cells[e.ColumnIndex];
 
-            var gozetmen = _gozetmenListesi[e.RowIndex];
-            string ham = dgvGozetmenler.Rows[e.RowIndex].Cells[e.ColumnIndex].Value?.ToString()?.Replace(',', '.').Trim();
+            switch (dgvGozetmenler.Columns[e.ColumnIndex].Name)
+            {
+                case "AdSoyad":
+                {
+                    string yeniAd = GozetmenAdiTemizle(cell.Value?.ToString());
+                    if (yeniAd == gozetmen.AdSoyad) { cell.Value = gozetmen.AdSoyad; return; }
 
-            if (double.TryParse(ham, System.Globalization.NumberStyles.Float,
-                                System.Globalization.CultureInfo.InvariantCulture, out double agirlik)
-                && agirlik > 0)
-            {
-                gozetmen.Agirlik = agirlik;
-                dgvGozetmenler.Rows[e.RowIndex].Cells[e.ColumnIndex].Value = agirlik.ToString("0.0#");
-                lblDurum.Text = $"✏ '{gozetmen.AdSoyad}' ağırlığı {agirlik:0.0#} olarak güncellendi.";
-                lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
+                    string hata = GozetmenBilgisiHatasi(yeniAd, null, gozetmen);
+                    if (hata != null)
+                    {
+                        MessageBox.Show(hata, "Geçersiz Ad Soyad", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        cell.Value = gozetmen.AdSoyad;
+                        return;
+                    }
+
+                    string eskiAd = gozetmen.AdSoyad;
+                    gozetmen.AdSoyad = yeniAd;
+                    cell.Value = yeniAd;
+                    int guncellenen = GozetmenAdiniGorevlerdeDegistir(eskiAd, yeniAd);
+                    if (guncellenen > 0) GozetmenSonuclariniYenile();
+
+                    lblDurum.Text = $"✏ '{eskiAd}' → '{yeniAd}' olarak düzeltildi" +
+                                    (guncellenen > 0 ? $" ({guncellenen} salon görevinde de güncellendi)." : ".");
+                    lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
+                    return;
+                }
+
+                case "Kod":
+                {
+                    string yeniKod = cell.Value?.ToString()?.Trim() ?? "";
+                    string hata = GozetmenBilgisiHatasi(gozetmen.AdSoyad, yeniKod, gozetmen);
+                    if (hata != null)
+                    {
+                        MessageBox.Show(hata, "Geçersiz Kod", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        cell.Value = gozetmen.Kod;
+                        return;
+                    }
+                    gozetmen.Kod = yeniKod;
+                    cell.Value = yeniKod;
+                    return;
+                }
+
+                case "Bolum":
+                {
+                    string yeniBolum = cell.Value?.ToString()?.Trim();
+                    if (string.IsNullOrEmpty(yeniBolum) || yeniBolum == gozetmen.Bolum) return;
+                    gozetmen.Bolum = yeniBolum;
+                    lblDurum.Text = $"✏ '{gozetmen.AdSoyad}' bölümü '{yeniBolum}' olarak değiştirildi" +
+                                    (gozetmen.AtananSinavSayisi > 0 ? " — bölüme göre dağıtım için 'Gözetmen Ata'yı tekrar çalıştırın." : ".");
+                    lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
+                    return;
+                }
+
+                case "Agirlik":
+                {
+                    string ham = cell.Value?.ToString()?.Replace(',', '.').Trim();
+                    if (double.TryParse(ham, System.Globalization.NumberStyles.Float,
+                                        System.Globalization.CultureInfo.InvariantCulture, out double agirlik)
+                        && agirlik > 0)
+                    {
+                        gozetmen.Agirlik = agirlik;
+                        cell.Value = agirlik.ToString("0.0#");
+                        lblDurum.Text = $"✏ '{gozetmen.AdSoyad}' ağırlığı {agirlik:0.0#} olarak güncellendi.";
+                        lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Ağırlık 0'dan büyük bir sayı olmalıdır (örn: 1.0, 1.5, 2.0).",
+                            "Geçersiz Ağırlık", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        cell.Value = gozetmen.Agirlik.ToString("0.0#");
+                    }
+                    return;
+                }
             }
-            else
+        }
+
+        /// <summary>
+        /// Atama sonrası ağırlık gruplarına göre ortalama görev sayısı — ağırlığın etkisi
+        /// görünsün diye (ör. "ağırlık 1,0 → ortalama 14 sınav", "ağırlık 0,5 → ortalama 7 sınav").
+        /// </summary>
+        private string AgirlikOzeti()
+            => string.Join("\n", _gozetmenListesi
+                .GroupBy(g => g.Agirlik)
+                .OrderByDescending(gr => gr.Key)
+                .Select(gr => $"   ağırlık {gr.Key:0.0#} → ortalama {gr.Average(g => g.AtananSinavSayisi):0.#} sınav ({gr.Count()} kişi)"));
+
+        // ── GÖZETMEN LİSTESİNİ UYGULAMA İÇİNDEN DÜZENLEME (Ekle / Sil) ──
+
+        private Button btnGozetmenEkle;
+        private Button btnGozetmenSil;
+
+        /// <summary>Gözetmen Excel'inde görülen yazımla 6 standart bölüm (açılır liste için).</summary>
+        private static readonly string[] StandartGozetmenBolumleri =
+        {
+            "Bilgisayar Mühendisliği", "Elektrik Elektronik Mühendisliği", "İnşaat Mühendisliği",
+            "Makine Mühendisliği", "Mekatronik Mühendisliği", "Metalurji ve Malzeme Mühendisliği"
+        };
+
+        /// <summary>"Gözetmen Yükle"nin yanına Ekle / Seçili Sil butonlarını yerleştirir.</summary>
+        private void GozetmenDuzenlemeKontrolleriniKur()
+        {
+            btnGozetmenYukle.Width = 250;
+
+            Button ButonYap(string metin, Color renk, int sol)
             {
-                MessageBox.Show("Ağırlık 0'dan büyük bir sayı olmalıdır (örn: 1.0, 1.5, 2.0).",
-                    "Geçersiz Ağırlık", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                dgvGozetmenler.Rows[e.RowIndex].Cells[e.ColumnIndex].Value = gozetmen.Agirlik.ToString("0.0#");
+                var b = new Button
+                {
+                    Text = metin,
+                    Location = new Point(sol, btnGozetmenYukle.Top),
+                    Size = new Size(112, btnGozetmenYukle.Height),
+                    BackColor = renk,
+                    ForeColor = Color.FromArgb(30, 30, 46),
+                    FlatStyle = FlatStyle.Flat,
+                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    Cursor = Cursors.Hand,
+                    UseVisualStyleBackColor = false
+                };
+                b.FlatAppearance.BorderSize = 0;
+                panelSol.Controls.Add(b);
+                return b;
             }
+
+            btnGozetmenEkle = ButonYap("➕ Ekle", Color.FromArgb(166, 227, 161), btnGozetmenYukle.Right + 8);
+            btnGozetmenSil = ButonYap("🗑 Seçili Sil", Color.FromArgb(243, 139, 168), btnGozetmenEkle.Right + 8);
+
+            btnGozetmenEkle.Click += BtnGozetmenEkle_Click;
+            btnGozetmenSil.Click += BtnGozetmenSil_Click;
+            dgvGozetmenler.KeyDown += DgvGozetmenler_KeyDown;
+            dgvGozetmenler.DataError += (s, e) => e.ThrowException = false;
+        }
+
+        /// <summary>
+        /// Bölüm açılır listesinin seçenekleri: listede kullanılan yazımlar aynen
+        /// (hücre değeri listede olmalı) + henüz görünmeyen standart bölümler.
+        /// </summary>
+        private List<string> GozetmenBolumSecenekleri()
+        {
+            var secenekler = _gozetmenListesi
+                .Select(g => g.Bolum?.Trim())
+                .Where(b => !string.IsNullOrEmpty(b))
+                .Distinct()
+                .ToList();
+            var anahtarlar = new HashSet<string>(secenekler.Select(BolumNormAnahtar));
+            secenekler.AddRange(StandartGozetmenBolumleri.Where(b => !anahtarlar.Contains(BolumNormAnahtar(b))));
+
+            var tr = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
+            return secenekler.OrderBy(b => b, StringComparer.Create(tr, ignoreCase: true)).ToList();
+        }
+
+        private static string GozetmenAdiTemizle(string ad)
+            => System.Text.RegularExpressions.Regex.Replace(ad ?? "", @"\s+", " ").Trim();
+
+        /// <summary>
+        /// Ad karşılaştırma anahtarı: Türkçe harfler sadeleştirilir, yalnızca harfler kalır.
+        /// "Ali Veli" ≡ "ALİ VELİ" ≡ "ALI VELI" (OrdinalIgnoreCase i/İ'yi eşlemez).
+        /// </summary>
+        private static string GozetmenAdAnahtari(string ad)
+        {
+            var sb = new StringBuilder();
+            foreach (char ch in ad ?? "")
+            {
+                char c = ch switch
+                {
+                    'ı' or 'I' or 'İ' => 'i',
+                    'ş' or 'Ş' => 's',
+                    'ğ' or 'Ğ' => 'g',
+                    'ç' or 'Ç' => 'c',
+                    'ö' or 'Ö' => 'o',
+                    'ü' or 'Ü' => 'u',
+                    _ => ch
+                };
+                if (char.IsLetter(c)) sb.Append(char.ToLowerInvariant(c));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Ad / kod geçerli ve benzersiz mi? Sorun varsa açıklamasını, yoksa null döner.
+        /// Atamalar ada göre yapıldığından aynı ad iki kez olamaz; rakamlı kodlar da
+        /// (B1, E4) Excel importundaki kurala uygun olarak benzersizdir.
+        /// </summary>
+        private string GozetmenBilgisiHatasi(string adSoyad, string kod, Gozetmen haric)
+        {
+            if (string.IsNullOrWhiteSpace(adSoyad)) return "Ad Soyad boş bırakılamaz.";
+            var ayni = _gozetmenListesi.FirstOrDefault(g => g != haric && GozetmenAdAnahtari(g.AdSoyad) == GozetmenAdAnahtari(adSoyad));
+            if (ayni != null)
+                return $"'{ayni.AdSoyad}' zaten listede.\nGözetmen atamaları ada göre yapıldığı için aynı ad iki kez bulunamaz.";
+            if (!string.IsNullOrEmpty(kod) && kod.Any(char.IsDigit) &&
+                _gozetmenListesi.Any(g => g != haric && string.Equals(g.Kod?.Trim(), kod, StringComparison.OrdinalIgnoreCase)))
+                return $"'{kod}' kodu başka bir gözetmende kullanılıyor.";
+            return null;
+        }
+
+        /// <summary>Mevcut programdaki salon görevlerinde gözetmen adını değiştirir; kaç satırın değiştiğini döner.</summary>
+        private int GozetmenAdiniGorevlerdeDegistir(string eskiAd, string yeniAd)
+        {
+            int sayac = 0;
+            foreach (var salon in (_sonSonuclar ?? new List<SinavAtama>())
+                         .SelectMany(s => s.AtananSalonlar ?? new List<SalonAtama>()))
+            {
+                if (!string.Equals(salon.GozetmenAdSoyad?.Trim(), eskiAd, StringComparison.OrdinalIgnoreCase)) continue;
+                salon.GozetmenAdSoyad = yeniAd;
+                sayac++;
+            }
+            return sayac;
+        }
+
+        /// <summary>Gözetmenin mevcut programdaki görev sayısı (aynı slot + salon tek görev sayılır).</summary>
+        private int GozetmenGorevSayisi(string adSoyad)
+            => (_sonSonuclar ?? new List<SinavAtama>())
+                .SelectMany(s => (s.AtananSalonlar ?? new List<SalonAtama>())
+                    .Where(a => string.Equals(a.GozetmenAdSoyad?.Trim(), adSoyad, StringComparison.OrdinalIgnoreCase))
+                    .Select(a => (s.Gun, s.Saat, a.SalonKodu)))
+                .Distinct()
+                .Count();
+
+        /// <summary>Gözetmen adları değiştiğinde sonuç ve matris görünümlerini tazeler.</summary>
+        private void GozetmenSonuclariniYenile()
+        {
+            if (_sonSonuclar == null) return;
+            SonuclariGoster(_sonSonuclar);
+            try { MatrisGorunumuOlustur(_sonSonuclar, _derslikler); } catch { /* görünüm opsiyonel */ }
+        }
+
+        private void BtnGozetmenEkle_Click(object sender, EventArgs e)
+        {
+            var yeni = GozetmenEklemePenceresi();
+            if (yeni != null) GozetmenEkle(yeni);
+        }
+
+        /// <summary>Gözetmeni listeye ekler ve satırını seçili gösterir.</summary>
+        private void GozetmenEkle(Gozetmen yeni)
+        {
+            _gozetmenListesi.Add(yeni);
+            GozetmenGridiniGuncelle();
+
+            var satir = dgvGozetmenler.Rows.Cast<DataGridViewRow>().FirstOrDefault(r => r.Tag == yeni);
+            if (satir != null)
+            {
+                dgvGozetmenler.CurrentCell = satir.Cells["AdSoyad"];
+                dgvGozetmenler.FirstDisplayedScrollingRowIndex = satir.Index;
+            }
+
+            lblDurum.Text = $"➕ '{yeni.AdSoyad}' gözetmen listesine eklendi" +
+                            (_sonSonuclar != null && _sonSonuclar.Count > 0
+                                ? " — görev alması için 'Gözetmen Ata'yı tekrar çalıştırın." : ".");
+            lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
+        }
+
+        private void BtnGozetmenSil_Click(object sender, EventArgs e)
+            => GozetmenleriSil(SeciliGozetmenler(), onaySor: true);
+
+        private void DgvGozetmenler_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Delete || dgvGozetmenler.IsCurrentCellInEditMode) return;
+            e.Handled = true;
+            GozetmenleriSil(SeciliGozetmenler(), onaySor: true);
+        }
+
+        /// <summary>Seçili hücrelerin ait olduğu gözetmenler (seçim yoksa aktif satır).</summary>
+        private List<Gozetmen> SeciliGozetmenler()
+        {
+            var secili = dgvGozetmenler.SelectedCells.Cast<DataGridViewCell>()
+                .Select(c => c.OwningRow.Tag as Gozetmen)
+                .Where(g => g != null)
+                .Distinct()
+                .ToList();
+            if (secili.Count == 0 && dgvGozetmenler.CurrentRow?.Tag is Gozetmen aktif)
+                secili.Add(aktif);
+            return secili;
+        }
+
+        /// <summary>
+        /// Gözetmenleri listeden siler. Mevcut programdaki görevleri boşaltılır
+        /// ('Gözetmen Ata' ile yeniden dağıtılabilir ya da taslakta elle doldurulabilir).
+        /// </summary>
+        private void GozetmenleriSil(List<Gozetmen> silinecekler, bool onaySor)
+        {
+            if (silinecekler == null || silinecekler.Count == 0)
+            {
+                if (onaySor)
+                    MessageBox.Show("Silmek için listeden bir gözetmen seçin.", "Uyarı",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            int gorev = silinecekler.Sum(g => GozetmenGorevSayisi(g.AdSoyad));
+
+            if (onaySor)
+            {
+                string kimler = silinecekler.Count == 1
+                    ? $"'{silinecekler[0].AdSoyad}'"
+                    : $"{silinecekler.Count} gözetmen ({string.Join(", ", silinecekler.Take(5).Select(g => g.AdSoyad))}" +
+                      (silinecekler.Count > 5 ? ", ..." : "") + ")";
+                string mesaj = $"{kimler} gözetmen listesinden silinecek.";
+                if (gorev > 0)
+                    mesaj += $"\n\nMevcut programda {gorev} salon görevi var; bu görevler gözetmensiz kalacak.\n" +
+                             "'Gözetmen Ata' ile yeniden dağıtabilir ya da gözetmenli taslakta elle doldurabilirsiniz.";
+                mesaj += "\n\nEmin misiniz?";
+                if (MessageBox.Show(mesaj, "Gözetmen Sil", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    return;
+            }
+
+            foreach (var g in silinecekler)
+            {
+                _gozetmenListesi.Remove(g);
+                GozetmenAdiniGorevlerdeDegistir(g.AdSoyad, "");
+            }
+
+            GozetmenGridiniGuncelle();
+            if (gorev > 0) GozetmenSonuclariniYenile();
+
+            lblDurum.Text = (silinecekler.Count == 1
+                                ? $"🗑 '{silinecekler[0].AdSoyad}' gözetmen listesinden silindi"
+                                : $"🗑 {silinecekler.Count} gözetmen listeden silindi") +
+                            (gorev > 0 ? $" — {gorev} salon görevi boş kaldı, 'Gözetmen Ata'yı tekrar çalıştırın." : ".");
+            lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
+        }
+
+        /// <summary>Elle gözetmen ekleme penceresi; iptal edilirse null döner.</summary>
+        private Gozetmen GozetmenEklemePenceresi()
+        {
+            var arkaplan = Color.FromArgb(30, 30, 46);
+            var yazi = Color.FromArgb(205, 214, 244);
+            var kutu = Color.FromArgb(49, 50, 68);
+
+            using var f = new Form
+            {
+                Text = "➕ Gözetmen Ekle",
+                ClientSize = new Size(390, 236),
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false, MinimizeBox = false, ShowInTaskbar = false,
+                BackColor = arkaplan, ForeColor = yazi,
+                Font = new Font("Segoe UI", 9.5F)
+            };
+
+            void Etiket(string metin, int ust) =>
+                f.Controls.Add(new Label { Text = metin, Location = new Point(16, ust + 4), AutoSize = true });
+
+            Etiket("Ad Soyad:", 16);
+            var txtAd = new TextBox { Location = new Point(150, 16), Width = 220, BackColor = kutu, ForeColor = yazi, BorderStyle = BorderStyle.FixedSingle };
+            Etiket("Bölüm:", 54);
+            var cmbBolum = new ComboBox
+            {
+                Location = new Point(150, 54), Width = 220, DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat, BackColor = kutu, ForeColor = yazi
+            };
+            cmbBolum.Items.AddRange(GozetmenBolumSecenekleri().ToArray());
+            Etiket("Kod (isteğe bağlı):", 92);
+            var txtKod = new TextBox { Location = new Point(150, 92), Width = 100, BackColor = kutu, ForeColor = yazi, BorderStyle = BorderStyle.FixedSingle };
+            Etiket("Ağırlık:", 130);
+            var numAgirlik = new NumericUpDown
+            {
+                Location = new Point(150, 130), Width = 100, DecimalPlaces = 1, Increment = 0.1M,
+                Minimum = 0.1M, Maximum = 10M, Value = 1.0M, BackColor = kutu, ForeColor = yazi
+            };
+
+            var btnTamam = new Button
+            {
+                Text = "Ekle", Location = new Point(186, 186), Size = new Size(88, 32),
+                BackColor = Color.FromArgb(166, 227, 161), ForeColor = arkaplan, FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold), UseVisualStyleBackColor = false
+            };
+            var btnIptal = new Button
+            {
+                Text = "İptal", Location = new Point(282, 186), Size = new Size(88, 32), DialogResult = DialogResult.Cancel,
+                BackColor = Color.FromArgb(69, 71, 90), ForeColor = yazi, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = false
+            };
+            btnTamam.FlatAppearance.BorderSize = 0;
+            btnIptal.FlatAppearance.BorderSize = 0;
+
+            Gozetmen sonuc = null;
+            btnTamam.Click += (s, e) =>
+            {
+                string ad = GozetmenAdiTemizle(txtAd.Text);
+                string kod = txtKod.Text.Trim();
+                string hata = GozetmenBilgisiHatasi(ad, kod, null)
+                              ?? (cmbBolum.SelectedItem == null ? "Bölüm seçin." : null);
+                if (hata != null)
+                {
+                    MessageBox.Show(f, hata, "Gözetmen Ekle", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                sonuc = new Gozetmen
+                {
+                    AdSoyad = ad, Bolum = cmbBolum.SelectedItem.ToString(), Kod = kod,
+                    Agirlik = (double)numAgirlik.Value, AtananSinavSayisi = 0
+                };
+                f.DialogResult = DialogResult.OK;
+            };
+
+            f.Controls.AddRange(new Control[] { txtAd, cmbBolum, txtKod, numAgirlik, btnTamam, btnIptal });
+            f.AcceptButton = btnTamam;
+            f.CancelButton = btnIptal;
+
+            return f.ShowDialog(this) == DialogResult.OK ? sonuc : null;
         }
 
         /// <summary>
@@ -3729,7 +4373,8 @@ namespace SinavProgrami
                     lblDurum.Text = $"⚠ {algoritma.ToplamAtama} salon-gözetmen ataması yapıldı, {algoritma.Uyarilar.Count} uyarı!";
                     lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
                     MessageBox.Show(
-                        $"Gözetmen ataması tamamlandı: {algoritma.ToplamAtama} atama.\n\nUyarılar:\n\n{string.Join("\n", algoritma.Uyarilar.Take(20))}",
+                        $"Gözetmen ataması tamamlandı: {algoritma.ToplamAtama} atama.\n\n" +
+                        $"⚖ Ağırlığa göre dağılım:\n{AgirlikOzeti()}\n\nUyarılar:\n\n{string.Join("\n", algoritma.Uyarilar.Take(20))}",
                         "Gözetmen Atama Uyarıları", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
                 else
@@ -3739,7 +4384,8 @@ namespace SinavProgrami
                     MessageBox.Show(
                         $"Gözetmen ataması başarıyla tamamlandı!\n\n" +
                         $"🧑‍🏫 {algoritma.ToplamAtama} salon-gözetmen ataması yapıldı.\n" +
-                        $"📊 Excel çıktısında salonların yanında gözetmen adları yer alacak.",
+                        $"📊 Excel çıktısında salonların yanında gözetmen adları yer alacak.\n\n" +
+                        $"⚖ Ağırlığa göre dağılım:\n{AgirlikOzeti()}",
                         "Atama Tamamlandı", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }

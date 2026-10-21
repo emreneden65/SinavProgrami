@@ -39,7 +39,7 @@ Binalar: **T1** ve **T4** (salon kodları `T1-xxx`, `T4-xxx`).
 | Versiyon kontrolü | Klasörde `.gitignore` var ama **git deposu başlatılmamış** |
 
 > Not: Proje başlangıçta **SQL Server** kullanıyordu, sonra **SQLite**'a taşındı.
-> Kökteki `.sql` dosyaları ve `verileri_disari_aktar.ps1` bu geçişten kalmadır.
+> Kökteki `.sql` dosyaları bu geçişten kalmadır.
 
 Proje şu an **hatasız derleniyor** (`dotnet build` → 0 hata, 0 uyarı).
 
@@ -71,7 +71,7 @@ Proje şu an **hatasız derleniyor** (`dotnet build` → 0 hata, 0 uyarı).
 │   └── SinavDagitimAlgoritma.cs      ESKİ tek-adımlı algoritma (KULLANILMIYOR)
 │
 ├── DataAccess/                    Excel ve veritabanı katmanı
-│   ├── DatabaseHelper.cs             SQLite şema kurulumu, salon okuma, CSV tohumlama
+│   ├── DatabaseHelper.cs             SQLite şema kurulumu (derslik tutmaz)
 │   ├── SinavListesiOkuyucu.cs        Adım 1: fakültenin ham ders listesi Excel'i
 │   ├── CekilmisDerslerExportHelper.cs Adım 2: şablon Excel'ini üretir
 │   ├── DagitimSablonuOkuyucu.cs      Adım 3: doldurulmuş şablonu geri okur
@@ -82,11 +82,9 @@ Proje şu an **hatasız derleniyor** (`dotnet build` → 0 hata, 0 uyarı).
 │   └── HazirSinavExcelOkuyucu.cs     ESKİ "BAHAR FİNAL" okuyucu (KULLANILMIYOR)
 │
 ├── Templates/dagitim_sablonu.xlsx Şablon üretiminde temel alınan boş Excel (zorunlu)
-├── Baslangic/Salonlar.csv         İlk açılışta DB'ye yüklenen 33 salon
 ├── Resources/app.ico
 │
 ├── yayinla.bat / yayinla.ps1      Taşınabilir ZIP paketi üretir
-├── verileri_disari_aktar.*        Eski SQL Server'dan Salonlar.csv üretir (tek seferlik)
 ├── Gozetmen_Tablolari.sql         Eski SQL Server şeması (sadece referans)
 ├── Salon_Tipi_Guncelleme.sql      Eski SQL Server betiği (sadece referans)
 └── NASIL_CALISTIRILIR.md          Kurulum / paketleme / kullanım kılavuzu
@@ -182,13 +180,17 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
   veya basit liste (Ad Soyad | Bölüm). Her gözetmenin **Ağırlık** değeri grid'den düzenlenebilir.
 
 **Gözetmen atama kuralları (`GozetmenAtamaAlgoritmasi`):**
+- **Ağırlık (görev payı):** Her gözetmenin hedefi `Toplam Görev × Ağırlık / Toplam Ağırlık`.
+  Ağırlığı 1,0 olan 14 sınava giriyorsa 0,5 olan 7 sınava girer. Yük her yerde ağırlıklıdır
+  (`Skor = Atanan Sınav / Ağırlık`); ağırlıklar eşitse herkese eşit görev düşer.
 - **Kesin kurallar:** Bir salona bir slotta tek gözetmen; bir gözetmen bir slotta tek salonda.
-- **Bölüm kodlu dersler:** Önce dersin kendi bölümünden; yoksa ortalama yükü en düşük bölümden
-  "destek". Seçim: en düşük skor (`Skor = Atanan Sınav / Ağırlık`).
-- **Ortak dersler:** En az görev almış hocalar grubundan; grup içinde bölüm eşleşmesi varsa o;
+- **Bölüm kodlu dersler:** Önce dersin kendi bölümünden; yoksa ağırlıklı ortalama yükü en düşük
+  bölümden "destek". Seçim: en düşük skor.
+- **Ortak dersler:** En düşük skorlu hocalar grubundan; grup içinde bölüm eşleşmesi varsa o;
   T4'teki sınavda EEM/MEK hocası öne alınır; eşitlikte kalabalık bölüm tercih edilir.
-- **Faz 2 – Yük dengeleme (swap):** max−min görev farkı ≤ 1 olana kadar ortak ders görevleri
-  devredilir; gerekirse zincirleme aktarım, son çare olarak bölüm dışına devir (`SonCareCaprazDevir`).
+- **Faz 2 – Yük dengeleme (swap):** Hocaların hedeften sapmaları (`Sınav − Hedef`) arasındaki fark
+  ≤ 1 olana kadar görevler devredilir; gerekirse zincirleme aktarım, son çare olarak bölüm dışına
+  devir (`SonCareCaprazDevir`). "Gözetmen Ata" sonunda ağırlığa göre dağılım özeti gösterilir.
 
 **Genel Dosya** şu sayfaları içerir: *Sınav Programı Matrisi, Salon Doluluk Özeti, Slot Bazlı Sınav
 Planı, Sınav Programı Formu, Sınav Programı Formu (Gözetmenli), Görev Çizelgesi*.
@@ -209,18 +211,20 @@ Planı, Sınav Programı Formu, Sınav Programı Formu (Gözetmenli), Görev Çi
 ## 5. Veritabanı
 
 `SinavDB.db` (SQLite), exe'nin yanında. İlk açılışta `DatabaseHelper.VeritabaniniHazirla()`
-tabloları oluşturur ve `Baslangic\Salonlar.csv` dosyasından salonları yükler.
+tabloları oluşturur.
 
 | Tablo | Durum |
 |---|---|
-| `Salonlar` | **Aktif kullanılıyor** — tek gerçek veri kaynağı bu |
+| `Salonlar` | **Yok.** Derslikler veritabanında tutulmaz; eski sürümlerden kalan tablo açılışta silinir |
 | `Gozetmenler` | Oluşturuluyor ama **hiç yazılmıyor / okunmuyor** |
 | `GozetmenGorevGecmisi` | Oluşturuluyor ama **hiç yazılmıyor / okunmuyor** |
 | `KayitliDersler` | Sadece "Sıfırla" butonu siliyor; dersler artık Excel'den geliyor |
 | `Dersler` | Oluşturuluyor, **hiç kullanılmıyor** |
 
-Salonları değiştirmek için `Baslangic\Salonlar.csv` düzenlenir ve `SinavDB.db` silinir
-(arayüzde salon ekleme/düzenleme ekranı yoktur).
+**Derslikler:** Her okulun derslikleri farklı olduğu için program salon listesiyle gelmez.
+Kullanıcı "🏫 Derslik Listesi Yükle" ile Excel'den yükler (`DerslikListesiOkuyucu`);
+liste `MainForm._derslikler`'de tutulur ve oturum kaydında (`%AppData%\SinavProgrami\oturum.json`)
+saklanır. Şablonun gün sayfalarındaki salon sütunları da bu listeden kurulur.
 
 ---
 
@@ -243,8 +247,8 @@ Kod incelemesinden çıkan, projeyi devralan kişinin bilmesi gereken noktalar:
    ve hata oranları bellekte tutuluyor; uygulama kapanınca kayboluyor. (Kalıcı olan tek şey
    `hoca_eslemesi.json`.)
 
-4. **Salon yönetim ekranı yok.** Salon eklemek/kapasite değiştirmek için CSV düzenleyip DB'yi
-   silmek gerekiyor.
+4. **Salon düzenleme ekranı yok.** Derslik eklemek/kapasite değiştirmek için derslik Excel'i
+   düzenlenip yeniden yüklenir.
 
 5. **Hata oranı manuel şablon yolunda salon atamasına etki etmiyor gibi görünüyor.**
    Hata oranı yalnızca `SablonDagitimAlgoritmasi` (Otomatik Dağıt) ve `SablonDogrulayici`'ya

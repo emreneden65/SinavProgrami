@@ -46,8 +46,8 @@ namespace SinavProgrami.DataAccess
             if (sonuclar == null || sonuclar.Count == 0)
                 throw new ArgumentException("Dışa aktarılacak sınav sonucu bulunamadı.");
 
-            // Salonları alfabetik sırala (kullanıcı kararı)
-            var siraliSalonlar = salonlar.OrderBy(s => s.SalonKodu).ToList();
+            // Salon sırası 'Salon Atanmış Dosya' ile aynı: T4 binası önce, sonra kod
+            var siraliSalonlar = GunSalonMatrisExportHelper.T4OnceSirala(salonlar, s => s.SalonKodu).ToList();
             var salonKodlari = siraliSalonlar.Select(s => s.SalonKodu).ToList();
 
             // Salon kodu → sıra indeksi. Büyük/küçük harf ve boşluk duyarsız: Excel gidiş-dönüşünde
@@ -554,8 +554,8 @@ namespace SinavProgrami.DataAccess
                     string salonlarStr = "";
                     if (sinav.AtananSalonlar != null && sinav.AtananSalonlar.Count > 0)
                     {
-                        salonlarStr = string.Join(", ", sinav.AtananSalonlar
-                            .OrderBy(sa => sa.SalonKodu)
+                        salonlarStr = string.Join(", ", GunSalonMatrisExportHelper
+                            .T4OnceSirala(sinav.AtananSalonlar, sa => sa.SalonKodu)
                             .Select(sa => $"{sa.SalonKodu}({sa.AtananOgrenciSayisi})"));
                     }
                     ws.Cells[row, 7].Value = salonlarStr;
@@ -1056,7 +1056,7 @@ namespace SinavProgrami.DataAccess
             var parcalar = new List<string>();
             var gorulen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var sa in salonAtamalari.OrderBy(s => s.SalonKodu, StringComparer.OrdinalIgnoreCase))
+            foreach (var sa in GunSalonMatrisExportHelper.T4OnceSirala(salonAtamalari, s => s.SalonKodu))
             {
                 if (string.IsNullOrWhiteSpace(sa.GozetmenAdSoyad)) continue;
 
@@ -1335,7 +1335,7 @@ namespace SinavProgrami.DataAccess
 
             // Her bloğu kompakt formatta yaz
             var parcalar = new List<string>();
-            foreach (var kvp in blokGruplari.OrderBy(k => k.Key))
+            foreach (var kvp in GunSalonMatrisExportHelper.T4OnceSirala(blokGruplari, k => k.Key))
             {
                 if (string.IsNullOrEmpty(kvp.Key))
                 {

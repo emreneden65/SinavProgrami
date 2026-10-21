@@ -15,6 +15,12 @@ namespace SinavProgrami.Algorithm
     /// Bir slot içindeki işlem hiyerarşisi:
     ///     önce BÖLÜM KODLU dersler (BIL101...), ardından ORTAK dersler.
     ///
+    /// ── AĞIRLIK ──────────────────────────────────────────────────────────
+    ///   Her gözetmenin hedef görev sayısı: Toplam Görev × Ağırlık / Toplam Ağırlık.
+    ///   Örn. ağırlığı 1,0 olan 14 sınava giriyorsa 0,5 olan 7 sınava girer.
+    ///   "Yük" her yerde ağırlıklıdır: Skor = Sınav Sayısı / Ağırlık.
+    ///   Ağırlıklar eşitse bu, herkese eşit görev demektir.
+    ///
     /// ── FAZ 1: KESİN KURALLAR (asla esnetilmez) ──────────────────────────
     ///   K1) TEK SALON, TEK GÖZETMEN
     ///       Aynı slotta aynı fiziksel salon birden fazla satırda görünüyorsa
@@ -27,12 +33,11 @@ namespace SinavProgrami.Algorithm
     /// ── FAZ 1-A: BÖLÜM KODLU DERSLER ─────────────────────────────────────
     ///   A1) Kesin öncelik: dersin KENDİ BÖLÜMÜNDEN müsait gözetmenler.
     ///   A2) Destek çağrısı: kendi bölümünden müsait kimse yoksa, o anki
-    ///       ORTALAMA SINAV YÜKÜ EN DÜŞÜK bölümden destek çağrılır.
+    ///       AĞIRLIKLI ORTALAMA YÜKÜ EN DÜŞÜK bölümden destek çağrılır.
     ///   A3) Nihai seçim: En Düşük Skor → En Düşük Sınav Sayısı.
-    ///       (Skor = Sınav Sayısı / Ağırlık — ağırlık YALNIZCA burada işler.)
     ///
     /// ── FAZ 1-B: ORTAK DERSLER ───────────────────────────────────────────
-    ///   B1) MUTLAK YÜK ÖNCELİĞİ: en az SINAV SAYISI'na sahip hocalar grubu.
+    ///   B1) MUTLAK YÜK ÖNCELİĞİ: en düşük SKOR'a (ağırlıklı yük) sahip hocalar grubu.
     ///   B2) Sınıf-bölüm eşleşmesi: bu grup İÇİNDE dersin bölümünden biri
     ///       varsa o seçilir.
     ///   B3) ADALET KORUMASI: grupta o bölümden kimse yoksa bölüm eşleşmesi
@@ -47,7 +52,10 @@ namespace SinavProgrami.Algorithm
     /// ── FAZ 2: YÜK DENGELEME (SWAP) ──────────────────────────────────────
     ///   Tüm slotlar bittikten sonra çalışır. YALNIZCA ortak ders atamaları
     ///   yer değiştirebilir; bölüm kodlu derslere dokunulmaz.
-    ///   Tetikleyici: max(sınav sayısı) − min(sınav sayısı) >= 2
+    ///   Sapma = Sınav Sayısı − Hedef (ağırlığa göre). Bir görev, verenin sapması
+    ///   alanınkinden 1'den FAZLA büyükse devredilir (devir dengeyi iyileştirir).
+    ///   Tetikleyici: max(sapma) − min(sapma) > 1
+    ///   (ağırlıklar eşitse bu, eski "max − min sınav sayısı >= 2" kuralının aynısıdır)
     ///     S1) Bölüm öncelikli aktarım  — en yüklü hocadan, fakirin bölümüne
     ///         ait bir ortak ders varsa o devredilir.
     ///     S2) Havuz içi çapraz kontrol — farkı >=2 olan DİĞER yüklü hocalar
@@ -63,7 +71,7 @@ namespace SinavProgrami.Algorithm
     ///         ders FARKLI bölümden bir hocaya devredilir. Bu, Faz 1-A2'deki
     ///         "destek çağrısı" ile aynı mantıktır ve yalnızca başka hiçbir
     ///         yol kalmadığında devreye girer.
-    ///   Maksimum fark 1 olana kadar tekrar eder.
+    ///   Sapma farkı en fazla 1 olana kadar tekrar eder.
     ///
     ///   MUTLAK SINIR: K2 (çakışma koruması) Faz 2'de de esnetilmez. Fakir,
     ///   devredilecek görevin slotunda başka bir salonda görevliyse aktarım
@@ -72,8 +80,14 @@ namespace SinavProgrami.Algorithm
     /// </summary>
     public class GozetmenAtamaAlgoritmasi
     {
-        /// <summary>Faz 2 hedefi: hocalar arasındaki maksimum sınav sayısı farkı.</summary>
+        /// <summary>Faz 2 hedefi: hocaların hedeften sapmaları arasındaki en büyük fark.</summary>
         private const int HedefMaksimumFark = 1;
+
+        /// <summary>Ağırlıklı yükler kesirli olduğundan karşılaştırmalardaki yuvarlama payı.</summary>
+        private const double Eps = 1e-9;
+
+        /// <summary>Faz 2: gözetmen → ağırlığına göre olması gereken görev sayısı (kesirli olabilir).</summary>
+        private Dictionary<Gozetmen, double> _hedefler;
 
         /// <summary>
         /// S5 zincirleme aktarımda izin verilen en fazla köprü sayısı.
@@ -260,27 +274,34 @@ namespace SinavProgrami.Algorithm
 
             // A3 — nihai seçim
             return havuz
-                .OrderBy(g => g.Skor)                 // Ağırlık YALNIZCA burada devrede
+                .OrderBy(g => g.Skor)                 // ağırlıklı yük
                 .ThenBy(g => g.AtananSinavSayisi)
                 .ThenBy(g => g.AdSoyad, StringComparer.OrdinalIgnoreCase)
                 .FirstOrDefault();
         }
 
-        /// <summary>Bir bölümün o anki ortalama sınav yükü (bölümün TÜM kadrosu üzerinden).</summary>
+        /// <summary>
+        /// Bir bölümün o anki ağırlıklı ortalama yükü (bölümün TÜM kadrosu üzerinden):
+        /// toplam sınav / toplam ağırlık.
+        /// </summary>
         private static double BolumOrtalamaYuk(string bolumKisa, List<Gozetmen> tumGozetmenler)
         {
             var uyeler = tumGozetmenler
                 .Where(g => BolumKisaltmasi(BolumNormalizeEt(g.Bolum)) == bolumKisa)
                 .ToList();
-            return uyeler.Count == 0 ? double.MaxValue : uyeler.Average(g => (double)g.AtananSinavSayisi);
+            return uyeler.Count == 0 ? double.MaxValue
+                                     : uyeler.Sum(g => g.AtananSinavSayisi) / uyeler.Sum(EtkinAgirlik);
         }
+
+        /// <summary>Gözetmenin geçerli ağırlığı (0 veya negatifse 1 — <see cref="Gozetmen.Skor"/> ile aynı kural).</summary>
+        private static double EtkinAgirlik(Gozetmen g) => g.Agirlik <= 0 ? 1.0 : g.Agirlik;
 
         // ───────────────────────────────────────────────────────────────────
         //  FAZ 1-B — ORTAK DERS SEÇİMİ
         // ───────────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// B1) MUTLAK YÜK ÖNCELİĞİ — en az sınav sayısına sahip hocalar grubu.
+        /// B1) MUTLAK YÜK ÖNCELİĞİ — en düşük ağırlıklı yüke (skor) sahip hocalar grubu.
         ///     Bu grubun DIŞINA hiçbir koşulda çıkılmaz (B3 adalet koruması).
         /// B2) Grup içinde dersin bölümünden biri varsa o tercih edilir.
         /// B3) Grupta o bölümden kimse yoksa bölüm eşleşmesi aranmaz.
@@ -291,9 +312,9 @@ namespace SinavProgrami.Algorithm
         {
             if (musaitler.Count == 0) return null;
 
-            // ── B1: MUTLAK YÜK ÖNCELİĞİ (ham sınav sayısı, ağırlıksız) ──
-            int enAzYuk = musaitler.Min(g => g.AtananSinavSayisi);
-            var dusukYukluGrup = musaitler.Where(g => g.AtananSinavSayisi == enAzYuk).ToList();
+            // ── B1: MUTLAK YÜK ÖNCELİĞİ (ağırlıklı yük: sınav sayısı / ağırlık) ──
+            double enAzSkor = musaitler.Min(g => g.Skor);
+            var dusukYukluGrup = musaitler.Where(g => g.Skor <= enAzSkor + Eps).ToList();
 
             // ── B2 / B3: bölüm eşleşmesi YALNIZCA bu grup içinde aranır ──
             var bolumdenOlanlar = dusukYukluGrup
@@ -370,6 +391,11 @@ namespace SinavProgrami.Algorithm
         {
             GorevHaritasiniKur(sinavAtamalari);
 
+            // Ağırlığa göre hedef görev sayıları — devirler toplamı değiştirmez, bir kez hesaplanır
+            int toplamGorev = gozetmenler.Sum(g => g.AtananSinavSayisi);
+            double toplamAgirlik = gozetmenler.Sum(EtkinAgirlik);
+            _hedefler = gozetmenler.ToDictionary(g => g, g => toplamGorev * EtkinAgirlik(g) / toplamAgirlik);
+
             int adimSiniri = gozetmenler.Count * sinavAtamalari.Count + 2000;
 
             // ── TUR 1: Spec'in asıl aşamaları (S1 → S2 → S3 → S4) + katı zincir (S5) ──
@@ -440,13 +466,13 @@ namespace SinavProgrami.Algorithm
         {
             while (adimSiniri-- > 0)
             {
-                int enAz = gozetmenler.Min(g => g.AtananSinavSayisi);
-                int enCok = gozetmenler.Max(g => g.AtananSinavSayisi);
-                if (enCok - enAz <= HedefMaksimumFark) return;   // hedefe ulaşıldı
+                double enAz = gozetmenler.Min(Sapma);
+                double enCok = gozetmenler.Max(Sapma);
+                if (enCok - enAz <= HedefMaksimumFark + Eps) return;   // hedefe ulaşıldı
 
                 var fakirler = gozetmenler
-                    .Where(g => enCok - g.AtananSinavSayisi >= 2)
-                    .OrderBy(g => g.AtananSinavSayisi)
+                    .Where(g => enCok - Sapma(g) > HedefMaksimumFark + Eps)
+                    .OrderBy(Sapma)
                     .ThenBy(g => g.AdSoyad, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
@@ -455,9 +481,8 @@ namespace SinavProgrami.Algorithm
                 foreach (var fakir in fakirler)
                 {
                     var zenginler = gozetmenler
-                        .Where(g => !ReferenceEquals(g, fakir) &&
-                                    g.AtananSinavSayisi - fakir.AtananSinavSayisi >= 2)
-                        .OrderByDescending(g => g.AtananSinavSayisi)
+                        .Where(g => !ReferenceEquals(g, fakir) && DevirFaydali(g, fakir))
+                        .OrderByDescending(Sapma)
                         .ThenBy(g => g.AdSoyad, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
@@ -481,6 +506,16 @@ namespace SinavProgrami.Algorithm
                 if (!aktarimYapildi) return;   // yapılabilecek aktarım kalmadı
             }
         }
+
+        /// <summary>Gözetmenin ağırlığına göre hedeften sapması: + fazla görev, − eksik görev.</summary>
+        private double Sapma(Gozetmen g) => g.AtananSinavSayisi - _hedefler[g];
+
+        /// <summary>
+        /// Verenden alana tek görev devri dengeyi iyileştirir mi? Sapma farkı 1'den büyükse
+        /// devirden sonra ikisi de hedefine yaklaşır (ağırlıklar eşitse: sayı farkı >= 2).
+        /// </summary>
+        private bool DevirFaydali(Gozetmen veren, Gozetmen alan)
+            => Sapma(veren) - Sapma(alan) > HedefMaksimumFark + Eps;
 
         /// <summary>Bir görev, verilen moda göre alıcıya devredilebilir mi?</summary>
         private bool UygunMu(Gozetmen alici, GorevBirimi birim, AktarimModu mod)
@@ -514,8 +549,8 @@ namespace SinavProgrami.Algorithm
 
             foreach (var zengin in zenginler)
             {
-                // Aradaki fark önceki aktarımlarla 1'e düşmüş olabilir
-                if (zengin.AtananSinavSayisi - fakir.AtananSinavSayisi < 2) continue;
+                // Aradaki fark önceki aktarımlarla kapanmış olabilir
+                if (!DevirFaydali(zengin, fakir)) continue;
                 if (!_gorevler.TryGetValue(zengin.AdSoyad, out var zenginGorevleri)) continue;
 
                 foreach (var birim in zenginGorevleri.ToList())
@@ -576,7 +611,7 @@ namespace SinavProgrami.Algorithm
 
                         onceki[veren.AdSoyad] = (alici, birim);
 
-                        if (veren.AtananSinavSayisi - fakir.AtananSinavSayisi >= 2)
+                        if (DevirFaydali(veren, fakir))
                             hedef = veren;                       // zincirin ucu bulundu
                         else
                             kuyruk.Enqueue((veren, derinlik + 1));
@@ -654,16 +689,16 @@ namespace SinavProgrami.Algorithm
         }
 
         /// <summary>
-        /// Faz 2 bittiğinde hâlâ fark >1 kaldıysa nedenini teşhis eden uyarı üretir.
+        /// Faz 2 bittiğinde hedeften sapma farkı hâlâ >1 kaldıysa nedenini teşhis eden uyarı üretir.
         /// </summary>
         private void DengesizlikUyarisiUret(List<Gozetmen> gozetmenler)
         {
-            int enAz = gozetmenler.Min(g => g.AtananSinavSayisi);
-            int enCok = gozetmenler.Max(g => g.AtananSinavSayisi);
-            if (enCok - enAz <= HedefMaksimumFark) return;
+            double enAz = gozetmenler.Min(Sapma);
+            double enCok = gozetmenler.Max(Sapma);
+            if (enCok - enAz <= HedefMaksimumFark + Eps) return;
 
-            var fakirler = gozetmenler.Where(g => enCok - g.AtananSinavSayisi >= 2).ToList();
-            var zenginler = gozetmenler.Where(g => g.AtananSinavSayisi == enCok).ToList();
+            var fakirler = gozetmenler.Where(g => enCok - Sapma(g) > HedefMaksimumFark + Eps).ToList();
+            var zenginler = gozetmenler.Where(g => Sapma(g) >= enCok - Eps).ToList();
 
             int cakismaEngeli = 0, devredilebilirVarMi = 0;
             foreach (var fakir in fakirler)
@@ -688,14 +723,15 @@ namespace SinavProgrami.Algorithm
                       "SonCareCaprazDevir açılırsa kapatılabilir."
                     : "Devredilebilecek uygun görev bulunamadı (çakışma koruması ve kural kısıtları).";
 
-            var az = gozetmenler.Where(g => g.AtananSinavSayisi == enAz).Select(g => g.AdSoyad).Take(5);
-            var cok = zenginler.Select(g => g.AdSoyad).Take(5);
+            string Kisi(Gozetmen g) => $"{g.AdSoyad} ({g.AtananSinavSayisi} sınav, hedef {_hedefler[g]:0.#})";
+            var az = gozetmenler.Where(g => Sapma(g) <= enAz + Eps).Select(Kisi).Take(5);
+            var cok = zenginler.Select(Kisi).Take(5);
 
             Uyarilar.Add(
-                $"⚠ YÜK DENGESİ: En yüklü ({enCok} sınav) ile en az yüklü ({enAz} sınav) gözetmen " +
-                $"arasındaki fark {enCok - enAz}. {sebep}\n" +
-                $"   En yüklü: {string.Join(", ", cok)}\n" +
-                $"   En az yüklü: {string.Join(", ", az)}");
+                $"⚠ YÜK DENGESİ: Ağırlığa göre hedefinin en üstündeki ile en altındaki gözetmen " +
+                $"arasında {enCok - enAz:0.#} sınavlık fark kaldı. {sebep}\n" +
+                $"   Hedefin üstünde: {string.Join(", ", cok)}\n" +
+                $"   Hedefin altında: {string.Join(", ", az)}");
         }
 
         // ═══════════════════════════════════════════════════════════════════

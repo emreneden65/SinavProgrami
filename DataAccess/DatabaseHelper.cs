@@ -66,13 +66,11 @@ namespace SinavProgrami.DataAccess
             {
                 connection.Open();
 
-                Calistir(connection, @"
-                    CREATE TABLE IF NOT EXISTS Salonlar (
-                        ID          INTEGER PRIMARY KEY AUTOINCREMENT,
-                        Salon_Kodu  TEXT    NOT NULL,
-                        Kapasite    INTEGER NOT NULL DEFAULT 0,
-                        Salon_Tipi  TEXT    NOT NULL DEFAULT 'NORMAL'
-                    );");
+                // Derslikler veritabanında TUTULMAZ — her okulun derslikleri farklıdır,
+                // kullanıcı "Derslik Listesi Yükle" ile Excel'den yükler (oturumda saklanır).
+                // Eski sürümlerin oluşturduğu salon tablosu ve içindeki kayıtlar kaldırılır.
+                Calistir(connection, "DROP INDEX IF EXISTS IX_Salonlar_Kodu;");
+                Calistir(connection, "DROP TABLE IF EXISTS Salonlar;");
 
                 Calistir(connection, @"
                     CREATE TABLE IF NOT EXISTS Dersler (
@@ -119,18 +117,10 @@ namespace SinavProgrami.DataAccess
                         UNIQUE (GozetmenID, SinavTarihi, Saat)
                     );");
 
-                Calistir(connection, "CREATE INDEX IF NOT EXISTS IX_Salonlar_Kodu     ON Salonlar(Salon_Kodu);");
                 Calistir(connection, "CREATE INDEX IF NOT EXISTS IX_Gozetmenler_Bolum ON Gozetmenler(Bolum);");
                 Calistir(connection, "CREATE INDEX IF NOT EXISTS IX_Gorev_Gozetmen    ON GozetmenGorevGecmisi(GozetmenID);");
                 Calistir(connection, "CREATE INDEX IF NOT EXISTS IX_Gorev_TarihSaat   ON GozetmenGorevGecmisi(SinavTarihi, Saat);");
                 Calistir(connection, "CREATE INDEX IF NOT EXISTS IX_KayitliDersler_Filtre ON KayitliDersler(BolumAdi, SinifSeviyesi);");
-
-                // Eski bir .db dosyasında Salon_Tipi kolonu yoksa ekle (geriye uyumluluk)
-                if (!KolonVarMi(connection, "Salonlar", "Salon_Tipi"))
-                    Calistir(connection, "ALTER TABLE Salonlar ADD COLUMN Salon_Tipi TEXT NOT NULL DEFAULT 'NORMAL';");
-
-                // İlk kurulum: exe yanındaki CSV tohum dosyalarını içeri al
-                BaslangicVerisiniYukle(connection);
             }
         }
 
@@ -141,19 +131,6 @@ namespace SinavProgrami.DataAccess
                 cmd.CommandText = sql;
                 cmd.ExecuteNonQuery();
             }
-        }
-
-        private static bool KolonVarMi(SqliteConnection connection, string tablo, string kolon)
-        {
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = $"PRAGMA table_info({tablo});";
-                using (var reader = cmd.ExecuteReader())
-                    while (reader.Read())
-                        if (string.Equals(reader.GetString(1), kolon, StringComparison.OrdinalIgnoreCase))
-                            return true;
-            }
-            return false;
         }
 
         private static long TekSayi(SqliteConnection connection, string sql)
@@ -168,65 +145,6 @@ namespace SinavProgrami.DataAccess
 
         private static bool TabloVarMi(SqliteConnection connection, string tablo) =>
             TekSayi(connection, $"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{tablo}'") > 0;
-
-        // ============================================================
-        // BAŞLANGIÇ VERİSİ (CSV tohumlama)
-        // ------------------------------------------------------------
-        // Yeni bir bilgisayarda Salonlar tablosunun boş kalmaması için,
-        // exe'nin yanındaki "Baslangic\Salonlar.csv" dosyası (varsa) bir
-        // kereye mahsus içeri alınır. Dosya biçimi (ilk satır başlık):
-        //     Salon_Kodu;Kapasite;Salon_Tipi
-        //     T4-283;60;UYGULAMALI
-        // Bu CSV'yi eski SQL Server veritabanınızdan üretmek için
-        // "verileri_disari_aktar.ps1" betiğini kullanın.
-        // ============================================================
-        private static void BaslangicVerisiniYukle(SqliteConnection connection)
-        {
-            try
-            {
-                if (TekSayi(connection, "SELECT COUNT(*) FROM Salonlar") > 0) return;
-
-                string csv = Path.Combine(AppContext.BaseDirectory, "Baslangic", "Salonlar.csv");
-                if (!File.Exists(csv)) return;
-
-                using (var transaction = connection.BeginTransaction())
-                {
-                    bool ilkSatir = true;
-                    foreach (var satir in File.ReadAllLines(csv, System.Text.Encoding.UTF8))
-                    {
-                        if (ilkSatir) { ilkSatir = false; continue; }          // başlık
-                        if (string.IsNullOrWhiteSpace(satir)) continue;
-                        if (satir.TrimStart().StartsWith("#")) continue;       // açıklama satırı
-
-                        var p = satir.Split(';');
-                        if (p.Length < 2) continue;
-
-                        string kod = p[0].Trim();
-                        if (kod.Length == 0) continue;
-                        int.TryParse(p[1].Trim(), out int kapasite);
-                        string tip = p.Length > 2 && p[2].Trim().Length > 0
-                                     ? p[2].Trim().ToUpperInvariant()
-                                     : "NORMAL";
-
-                        using (var cmd = new SqliteCommand(
-                            "INSERT INTO Salonlar (Salon_Kodu, Kapasite, Salon_Tipi) VALUES ($k, $c, $t);",
-                            connection, transaction))
-                        {
-                            cmd.Parameters.AddWithValue("$k", kod);
-                            cmd.Parameters.AddWithValue("$c", kapasite);
-                            cmd.Parameters.AddWithValue("$t", tip);
-                            cmd.ExecuteNonQuery();
-                        }
-                    }
-                    transaction.Commit();
-                }
-            }
-            catch (Exception ex)
-            {
-                // Tohumlama başarısız olursa uygulama yine de açılmalı.
-                System.Diagnostics.Debug.WriteLine($"Başlangıç verisi yüklenemedi: {ex.Message}");
-            }
-        }
 
         /// <summary>
         /// Veritabanı bağlantısını test eder.
@@ -246,97 +164,6 @@ namespace SinavProgrami.DataAccess
                 System.Diagnostics.Debug.WriteLine($"Bağlantı hatası: {ex.Message}");
                 return false;
             }
-        }
-
-        /// <summary>
-        /// Salonlar tablosundaki tüm kayıtları getirir.
-        /// </summary>
-        public static List<Salon> SalonlariGetir()
-        {
-            var salonlar = new List<Salon>();
-
-            try
-            {
-                using (var connection = new SqliteConnection(_connectionString))
-                {
-                    connection.Open();
-                    if (!TabloVarMi(connection, "Salonlar")) return salonlar;
-
-                    // Salon_Tipi kolonu henüz eklenmemişse eski sorguyla devam et (geriye uyumluluk)
-                    bool tipKolonuVar = KolonVarMi(connection, "Salonlar", "Salon_Tipi");
-
-                    string query = tipKolonuVar
-                        ? "SELECT ID, Salon_Kodu, Kapasite, COALESCE(Salon_Tipi, 'NORMAL') FROM Salonlar ORDER BY Kapasite ASC"
-                        : "SELECT ID, Salon_Kodu, Kapasite, 'NORMAL' FROM Salonlar ORDER BY Kapasite ASC";
-
-                    using (var command = new SqliteCommand(query, connection))
-                    using (var reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            salonlar.Add(new Salon
-                            {
-                                ID = reader.GetInt32(0),
-                                SalonKodu = reader.GetString(1),
-                                Kapasite = reader.GetInt32(2),
-                                SalonTipi = reader.GetString(3)
-                            });
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Salonlar tablosu okunurken hata oluştu: {ex.Message}", ex);
-            }
-
-            return salonlar;
-        }
-
-        /// <summary>
-        /// Salonlar tablosunu verilen listeyle sıfırdan yazar.
-        /// (Excel'den salon listesi içeri almak için kullanılabilir.)
-        /// </summary>
-        public static int SalonlariKaydet(List<Salon> salonlar, bool oncekileriSil = true)
-        {
-            if (salonlar == null) return 0;
-            int yazilan = 0;
-
-            try
-            {
-                using (var connection = new SqliteConnection(_connectionString))
-                {
-                    connection.Open();
-                    using (var transaction = connection.BeginTransaction())
-                    {
-                        if (oncekileriSil)
-                            using (var sil = new SqliteCommand("DELETE FROM Salonlar;", connection, transaction))
-                                sil.ExecuteNonQuery();
-
-                        foreach (var s in salonlar)
-                        {
-                            if (string.IsNullOrWhiteSpace(s?.SalonKodu)) continue;
-                            using (var cmd = new SqliteCommand(
-                                "INSERT INTO Salonlar (Salon_Kodu, Kapasite, Salon_Tipi) VALUES ($k, $c, $t);",
-                                connection, transaction))
-                            {
-                                cmd.Parameters.AddWithValue("$k", s.SalonKodu.Trim());
-                                cmd.Parameters.AddWithValue("$c", s.Kapasite);
-                                cmd.Parameters.AddWithValue("$t",
-                                    string.IsNullOrWhiteSpace(s.SalonTipi) ? "NORMAL" : s.SalonTipi.ToUpperInvariant());
-                                yazilan += cmd.ExecuteNonQuery();
-                            }
-                        }
-                        transaction.Commit();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Salonlar kaydedilirken hata oluştu: {ex.Message}", ex);
-            }
-
-            return yazilan;
         }
 
         // ============================================================

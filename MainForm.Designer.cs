@@ -1055,11 +1055,11 @@ namespace SinavProgrami
             Controls.Add(panelSol);
             Font = new Font("Segoe UI", 10F);
             ForeColor = Color.FromArgb(205, 214, 244);
-            // Pencere sabit boyutlu: büyütme/yeniden boyutlandırma kapalı.
-            // (İçerik mutlak konumlu olduğu için büyütmek boş alan üretiyordu;
-            //  sığmayan içerik sol paneldeki kaydırma çubuğuyla gezilir.)
-            FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox = false;
+            // Pencere boyutlandırılabilir ve tam ekran yapılabilir: sol panel boyca uzar,
+            // sağdaki sonuç paneli (Dock = Fill) kalan genişliği doldurur. Tam ekrana
+            // geçince sonuç paneli otomatik açılır (bkz. MainForm.PencereBoyutuDegisti).
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
             MinimumSize = new Size(720, 560);
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;

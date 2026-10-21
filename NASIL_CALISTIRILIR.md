@@ -26,7 +26,7 @@ Siyah bir pencere açılır ve şunları sırayla yapar:
    (proje klasörüne `SinavDB-yedek-tarih.db` adıyla)
 3. Uygulamayı `Yayin\` klasörüne **self-contained** derler
    (yani .NET çalışma zamanı paketin içine gömülür)
-4. `Templates\dagitim_sablonu.xlsx` ve `Baslangic\Salonlar.csv` dosyalarını yanına kopyalar
+4. `Templates\dagitim_sablonu.xlsx` dosyasını yanına kopyalar
 5. Masaüstünde **"Sınav Programı"** kısayolu oluşturur
 6. Her şeyi **`SinavProgrami-Portable.zip`** içinde paketler
 
@@ -72,11 +72,10 @@ ZIP'e sağ tıkla → **Tümünü ayıkla**. Hedef klasör olarak şunlardan bir
 
 - `SinavDB.db` otomatik oluşturulur
 - Tablolar kurulur
-- `Baslangic\Salonlar.csv` içindeki salonlar veritabanına yüklenir
 
-Sol altta yeşil **"✅ Veritabanı bağlı — 33 salon bulundu"** yazısını görmelisin.
-Sarı **"salon kaydı yok"** uyarısı görürsen `Baslangic\Salonlar.csv` dosyası
-eksik veya boş demektir (bkz. Bölüm 4).
+Program hiçbir derslik listesiyle gelmez. Sol altta sarı
+**"⚠️ Derslik listesi yüklenmedi"** yazısı görünür; bu normaldir —
+okulunun derslik Excel'ini yükleyince yeşile döner (bkz. Bölüm 4).
 
 ### Adım 4 — Windows SmartScreen uyarısı çıkarsa
 
@@ -94,6 +93,7 @@ Görev çubuğuna sabitlemek için kısayola sağ tık → *Görev çubuğuna sa
 
 Butonlar yukarıdan aşağıya sırayla kullanılır:
 
+0. **Derslik Listesi Yükle** — okulun derslik Excel'i (bir kez yeterli, bkz. Bölüm 4)
 1. **Sınav Listesi Yükle** — fakülteden gelen ham ders listesi Excel'i
 2. **Şablon Oluştur** — dersleri günlere/saatlere dağıtan şablon Excel'i üretir
    *(Şablon Oluştur (Boş) = dağıtımı sen elle yapacaksan)*
@@ -117,39 +117,47 @@ dediğinde takvim bu standarda göre otomatik işaretlenir.
 
 ---
 
-## BÖLÜM 4 — Salon listesini düzenleme
+## BÖLÜM 4 — Derslik listesi
 
-`Baslangic\Salonlar.csv` dosyası Excel veya Not Defteri ile açılıp
-düzenlenebilir. Format:
+Derslikler her okulda farklı olduğu için program kendi listesiyle gelmez ve
+derslikleri **veritabanında tutmaz**. Sağ sütundaki **0 · DERSLİKLER →
+🏫 Derslik Listesi Yükle** ile okulun derslik Excel'i yüklenir. Beklenen düzen:
 
-```
-Salon_Kodu;Kapasite;Salon_Tipi
-T4-283;40;UYGULAMALI
-T4-201;60;NORMAL
-```
+| DERSLİK | SINAV DÜZEYİNDEKİ ÖĞR. SAYISI | DERS DÜZEYİNDEKİ ÖĞR. SAYISI |
+|---|---|---|
+| T1-107 | 62(31) | 155 |
+| *TEKNİK RESİM SINIFLARI* (birleşik başlık satırı) | | |
+| T1-105 | 52 | 52 |
 
-`Salon_Tipi` ya `NORMAL` ya da `UYGULAMALI` olur. Program uygulamalı dersleri
-yalnızca `UYGULAMALI`, normal dersleri yalnızca `NORMAL` salonlara atar.
+- Kapasite, "SINAV DÜZEYİNDEKİ" sütunundaki ilk sayıdır (`62(31)` → 62).
+- "LABORATUVAR", "TEKNİK RESİM", "ÇİZİM" gibi birleşik başlıkların altındaki derslikler
+  **uygulamalı** sayılır. Uygulamalı dersler yalnızca bu dersliklere, diğerleri yalnızca
+  normal dersliklere atanır.
+- Liste bir kez yüklenince uygulama kapatılıp açılsa da korunur (oturum kaydında durur).
+  Değiştirmek için dosyayı yeniden yüklemen yeterli; program eklenen / silinen /
+  değişen derslikleri gösterip onay ister.
+- **Uygulamayı Sıfırla** derslik listesini de siler.
 
-Bu dosyayı değiştirdikten sonra değişikliğin okunması için ya `SinavDB.db`
-dosyasını sil (uygulama kapalıyken) ya da uygulama içinden
-**Uygulamayı Sıfırla (Fabrika Ayarlarına Dön)** de.
+Derslik listesi yüklenmeden *Şablon Oluştur*, *Otomatik Dağıt*, *Salonları Ata* ve
+Excel çıktıları çalışmaz; program önce listeyi yüklemeni ister.
 
 ---
 
 ## BÖLÜM 5 — Önemli notlar
 
-**Veritabanı.** `SinavDB.db` tüm verini (salonlar, kayıtlı dersler, gözetmen
-görev geçmişi) tutar. Yedek almak için bu tek dosyayı kopyalaman yeterlidir.
-Uygulamayı taşırken `.db` dosyasını da beraberinde götürürsen verin korunur.
+**Çalışma verileri.** Ders listesi, takvim, derslikler, ayarlar, atamalar ve
+gözetmenler `%AppData%\SinavProgrami\oturum.json` dosyasında saklanır; uygulama
+kapatılıp açılınca kaldığın yerden devam eder. `SinavDB.db` derslik tutmaz.
 
 **Templates klasörü.** `dagitim_sablonu.xlsx` exe'nin yanındaki `Templates\`
 klasöründe durmak zorundadır; silinirse şablon üretimi hata verir.
 
-**Pencere boyutu.** Pencere sabit boyutludur, büyütülemez. İçerik sığmazsa
-sol paneldeki kaydırma çubuğunu kullan. Bir tabloyu büyük görmek istersen
-bölüm başlığının sağındaki **⤢** düğmesine bas — ayrı, boyutlandırılabilir
-pencerede açılır.
+**Pencere boyutu.** Pencere kenarından sürüklenerek büyütülebilir veya sağ üstteki
+büyüt düğmesiyle tam ekran yapılabilir. Tam ekranda sonuç paneli (Şablon / Sonuçlar /
+Matris tabloları) otomatik açılır ve ekranın geri kalanını doldurur; normal boyuta
+dönünce yine kapanır. Uygulama kapatıldığındaki pencere boyutuyla (tam ekransa tam
+ekran) açılır. Sol paneldeki bir tabloyu büyük görmek istersen bölüm başlığının
+sağındaki **⤢** düğmesine bas — ayrı, boyutlandırılabilir pencerede açılır.
 
 **Kod değiştirdiğinde.** Yeni sürümü almak için `yayinla.bat` dosyasını tekrar
 çalıştır. `Yayin` klasörü silinip yeniden oluşturulur; içindeki `SinavDB.db`
@@ -157,7 +165,7 @@ otomatik olarak proje klasörüne yedeklenir.
 
 **Eski SQL betikleri.** `Gozetmen_Tablolari.sql` ve `Salon_Tipi_Guncelleme.sql`
 artık kullanılmıyor; şema uygulama tarafından otomatik kuruluyor. Yalnızca
-referans olarak duruyorlar.
+referans olarak duruyorlar (salon tablosu artık hiç oluşturulmuyor).
 
 ---
 

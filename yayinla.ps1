@@ -77,13 +77,6 @@ $sablonKlasor = Join-Path $cikis 'Templates'
 if (-not (Test-Path $sablonKlasor)) { New-Item -ItemType Directory -Path $sablonKlasor | Out-Null }
 Copy-Item (Join-Path $PSScriptRoot 'Templates\dagitim_sablonu.xlsx') $sablonKlasor -Force
 
-# ── Başlangıç verisini (salon tohumu) kopyala ─────────────────
-# İlk açılışta SinavDB.db oluşturulurken Salonlar tablosunu doldurur.
-$basKlasor = Join-Path $cikis 'Baslangic'
-if (-not (Test-Path $basKlasor)) { New-Item -ItemType Directory -Path $basKlasor | Out-Null }
-$basKaynak = Join-Path $PSScriptRoot 'Baslangic\Salonlar.csv'
-if (Test-Path $basKaynak) { Copy-Item $basKaynak $basKlasor -Force }
-
 # ── Gereksiz dosyaları temizle (boyut küçülsün) ───────────────
 Get-ChildItem $cikis -Filter '*.pdb' -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force
 

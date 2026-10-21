@@ -27,11 +27,26 @@ namespace SinavProgrami.DataAccess
         // ÖRNEK ŞABLON PALETİ (kullanıcının "örnek dağıtım.xlsx" dosyasından birebir):
         //   Uygulamalı salon kolonları  → açık altın (FFF2CC)
         //   D şubesi başlık hücresi (I2) → DOLGUSUZ (varsayılan/şeffaf arka plan)
-        private static readonly Color UygulamaliKolonDolgu = Color.FromArgb(255, 242, 204);
+        internal static readonly Color UygulamaliKolonDolgu = Color.FromArgb(255, 242, 204);
 
         private static readonly string[] SabitBasliklar = { "Bölüm", "SINIF", "Tarih", "Saat", "Dersler", "A", "B", "C", "D" };
         private static readonly string[] Bolumler = { "BİL", "EEM", "INS", "MAK", "MEK", "MEM" };
         private const int SalonBaslangicKolon = 10; // A..I = 9 sabit kolon, salonlar 10'dan başlar
+
+        /// <summary>
+        /// Gün sayfalarındaki salon sütunlarının sırası: kapasite > 0, T4 binası önce, sonra kod sırası.
+        /// Şablon Excel'inin gün sayfaları da aynı sırayı kullanır.
+        /// </summary>
+        public static List<Salon> SalonSutunSirasi(List<Salon> salonlar)
+            => T4OnceSirala((salonlar ?? new List<Salon>()).Where(s => s.Kapasite > 0), s => s.SalonKodu)
+                .ToList();
+
+        /// <summary>
+        /// Tüm çıktılarda ortak salon sırası: T4 binası önce, sonra salon kodu.
+        /// (Salon atanmış dosya, gözetmenli taslak / final ve uygulamadaki matris aynı sırayı kullanır.)
+        /// </summary>
+        public static IOrderedEnumerable<T> T4OnceSirala<T>(IEnumerable<T> kaynak, Func<T, string> salonKodu)
+            => kaynak.OrderBy(x => T4mu(salonKodu(x)) ? 0 : 1).ThenBy(salonKodu);
 
         public static void YazVeKaydet(List<GunlukSalonDagitici.GunSatir> satirlar, List<Salon> salonlar,
                                        List<SinavAtama> sablonSonuclari, Dictionary<DateTime, List<string>> takvim,
@@ -39,12 +54,7 @@ namespace SinavProgrami.DataAccess
         {
             satirlar = satirlar ?? new List<GunlukSalonDagitici.GunSatir>();
 
-            // Salon kolonları: kapasite > 0, T4 binası önce, sonra kod sırası
-            var salonSirali = (salonlar ?? new List<Salon>())
-                .Where(s => s.Kapasite > 0)
-                .OrderBy(s => T4mu(s.SalonKodu) ? 0 : 1)
-                .ThenBy(s => s.SalonKodu)
-                .ToList();
+            var salonSirali = SalonSutunSirasi(salonlar);
             var salonKolon = new Dictionary<string, int>();
             for (int i = 0; i < salonSirali.Count; i++)
                 salonKolon[salonSirali[i].SalonKodu] = SalonBaslangicKolon + i;

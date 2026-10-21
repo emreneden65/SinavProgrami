@@ -39,11 +39,13 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 
-    <!-- İlk kurulumda Salonlar tablosunu doldurmak için kullanılan tohum CSV.
-         Varsa exe'nin yanındaki Baslangic\ klasörüne kopyalanır. -->
-    <None Update="Baslangic\Salonlar.csv">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Testler ayrı projedir (Testler\SinavProgrami.Testler.csproj) — programa derlenmez. -->
+    <Compile Remove="Testler\**" />
+    <EmbeddedResource Remove="Testler\**" />
+    <None Remove="Testler\**" />
   </ItemGroup>
 
 </Project>

@@ -13,7 +13,10 @@ namespace SinavProgrami.Models
         public string AdSoyad { get; set; }
         public string Bolum { get; set; }
 
-        /// <summary>Ağırlık arttıkça bu gözetmene daha fazla sınav düşer (skor daha yavaş artar).</summary>
+        /// <summary>
+        /// Görev payı: görev sayısı ağırlıkla orantılıdır
+        /// (ağırlık 1,0 olan 14 sınava giriyorsa 0,5 olan 7 sınava girer).
+        /// </summary>
         public double Agirlik { get; set; } = 1.0;
 
         public int AtananSinavSayisi { get; set; } = 0;

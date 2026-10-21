@@ -69,9 +69,10 @@ namespace SinavProgrami.DataAccess
         /// <param name="takvim">Seçilen sınav günleri → o günün saatleri.</param>
         /// <param name="cikisYolu">Kaydedilecek .xlsx yolu.</param>
         /// <param name="uyarilar">Bilgilendirici uyarılar.</param>
+        /// <param name="derslikler">Kullanıcının yüklediği derslikler — gün sayfalarının salon sütunları.</param>
         public static void Olustur(List<Ders> dersler, Dictionary<DateTime, List<string>> takvim,
                                    string cikisYolu, out List<string> uyarilar,
-                                   List<SinavAtama> dagitim = null)
+                                   List<SinavAtama> dagitim = null, List<Salon> derslikler = null)
         {
             uyarilar = new List<string>();
             if (dersler == null) dersler = new List<Ders>();
@@ -147,7 +148,7 @@ namespace SinavProgrami.DataAccess
             {
                 CekilmisDersleriYaz(paket, bloklar, ortakListe);
                 SablonTakvimiYaz(paket, gunler, takvim, dagitim, uyarilar);
-                GunSayfalariOlustur(paket, gunler, takvim, uyarilar);
+                GunSayfalariOlustur(paket, gunler, takvim, derslikler, uyarilar);
 
                 // Şablon dosyasındaki eski "INT" başlıklarını "D" olarak güncelle ve
                 // D şubesi başlıklarındaki mavi dolguyu kaldır.
@@ -431,7 +432,8 @@ namespace SinavProgrami.DataAccess
         // ═══════════════ 3) GÜN SAYFALARI (örnek salon sayfasını klonla) ═══════════════
 
         private static void GunSayfalariOlustur(ExcelPackage paket, List<DateTime> gunler,
-                                                Dictionary<DateTime, List<string>> takvim, List<string> uyarilar)
+                                                Dictionary<DateTime, List<string>> takvim, List<Salon> derslikler,
+                                                List<string> uyarilar)
         {
             // Örnek gün sayfalarını (Bölüm/Tarih/Dersler yapısındaki) tespit et
             var gunImzali = paket.Workbook.Worksheets
@@ -470,6 +472,8 @@ namespace SinavProgrami.DataAccess
                 for (int rr = 3; rr <= klonSonSatir; rr++)
                     for (int c = 1; c <= klonSonKolon; c++) yeni.Cells[rr, c].Value = null;
 
+                SalonSutunlariniKur(yeni, derslikler, klonSonSatir);
+
                 int r = 3; // r1=salon adları, r2=başlık/kapasite, r3+=veri
                 foreach (var saat in saatler)
                     foreach (var bolum in Bolumler)
@@ -488,6 +492,58 @@ namespace SinavProgrami.DataAccess
             foreach (var isim in silinecek)
             {
                 try { paket.Workbook.Worksheets.Delete(isim); } catch { /* yoksa geç */ }
+            }
+        }
+
+        /// <summary>Gün sayfalarında salon sütunlarının başladığı sütun (J).</summary>
+        private const int GunSayfasiSalonKolonu = 10;
+
+        /// <summary>
+        /// Klonlanan gün sayfasının salon sütunlarını yüklenen derslik listesiyle yeniden kurar.
+        /// Şablon dosyasındaki örnek salonlar (belirli bir okulun derslikleri) ve onların
+        /// konuma bağlı uygulamalı dolguları çıktıya taşınmaz; sıra ve dolgu
+        /// 'Salon Atanmış Dosya' ile aynıdır.
+        /// </summary>
+        private static void SalonSutunlariniKur(ExcelWorksheet ws, List<Salon> derslikler, int sonSatir)
+        {
+            const int ilk = GunSayfasiSalonKolonu;
+            var sirali = GunSalonMatrisExportHelper.SalonSutunSirasi(derslikler);
+            int ornekSon = Math.Max(ilk, ws.Dimension?.End.Column ?? ilk);
+            int sonKol = ilk + sirali.Count - 1;
+
+            // Şablonda dolgusuz (normal salon) bir sütun — şablondan fazla salon varsa biçim kaynağı
+            int normalKaynak = Enumerable.Range(ilk, ornekSon - ilk + 1)
+                .FirstOrDefault(c => ws.Cells[3, c].Style.Fill.PatternType == ExcelFillStyle.None, ilk);
+
+            for (int i = 0; i < sirali.Count; i++)
+            {
+                int kol = ilk + i;
+                if (kol > ornekSon)
+                {
+                    ws.Column(kol).Width = ws.Column(normalKaynak).Width;
+                    for (int r = 1; r <= sonSatir; r++)
+                        ws.Cells[r, kol].StyleID = ws.Cells[r, normalKaynak].StyleID;
+                }
+
+                var sutun = ws.Cells[1, kol, sonSatir, kol];
+                if (sirali[i].UygulamaliMi)
+                {
+                    sutun.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                    sutun.Style.Fill.BackgroundColor.SetColor(GunSalonMatrisExportHelper.UygulamaliKolonDolgu);
+                }
+                else sutun.Style.Fill.PatternType = ExcelFillStyle.None;
+
+                ws.Cells[1, kol].Value = sirali[i].SalonKodu;
+                ws.Cells[2, kol].Value = sirali[i].Kapasite;
+            }
+
+            // Kalan örnek sütunlar temizlenir; şablonun sağ dış kenarlığı son salon sütununa taşınır
+            if (sonKol < ornekSon)
+            {
+                if (sirali.Count > 0)
+                    for (int r = 1; r <= sonSatir; r++)
+                        ws.Cells[r, sonKol].Style.Border.Right.Style = ws.Cells[r, ornekSon].Style.Border.Right.Style;
+                ws.Cells[1, sonKol + 1, sonSatir, ornekSon].Clear();
             }
         }
 
