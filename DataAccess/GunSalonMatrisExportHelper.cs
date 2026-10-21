@@ -123,13 +123,13 @@ namespace SinavProgrami.DataAccess
 
                     void SaatYaz(int satirNo, string saat)
                     {
-                        // Örnek şablondaki gibi gerçek saat değeri (hh:mm formatlı)
+                        // Örnek şablondaki gibi gerçek saat değeri — 13.00 biçiminde görünür
                         if (TimeSpan.TryParse(saat, out var t))
                         {
                             ws.Cells[satirNo, 4].Value = t.TotalDays;
-                            ws.Cells[satirNo, 4].Style.Numberformat.Format = "hh:mm;@";
+                            ws.Cells[satirNo, 4].Style.Numberformat.Format = SaatYardimci.ExcelSaatBicimi;
                         }
-                        else ws.Cells[satirNo, 4].Value = saat;
+                        else ws.Cells[satirNo, 4].Value = SaatYardimci.ExcelMetni(saat);
                         ws.Cells[satirNo, 4].Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
                     }
 
@@ -324,7 +324,7 @@ namespace SinavProgrami.DataAccess
                     foreach (var bol in Bolumler)
                     {
                         ws.Cells[r, col + 0].Value = bol;
-                        ws.Cells[r, col + 2].Value = saat;
+                        ws.Cells[r, col + 2].Value = SaatYardimci.ExcelMetni(saat);
                         string key = bol + "|" + day.ToString("yyyy-MM-dd") + "|" + saat;
                         if (luk.TryGetValue(key, out var ic))
                         {

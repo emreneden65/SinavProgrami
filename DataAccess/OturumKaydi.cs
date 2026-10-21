@@ -24,6 +24,12 @@ namespace SinavProgrami.DataAccess
         public List<Ders> Dersler { get; set; } = new List<Ders>();
         public List<TakvimGunu> Takvim { get; set; } = new List<TakvimGunu>();
         public SinavDonemTipi SinavTipi { get; set; } = SinavDonemTipi.Vize;
+
+        /// <summary>Öğretim yılının başladığı yıl (2026 → 2026/2027); null = seçilmedi.</summary>
+        public int? OgretimYili { get; set; }
+
+        /// <summary>Güz / Bahar; null = seçilmedi.</summary>
+        public Yariyil? Yariyil { get; set; }
         public DateTime? BaslangicTarihi { get; set; }
 
         public List<DersHavuzu> Havuzlar { get; set; } = new List<DersHavuzu>();

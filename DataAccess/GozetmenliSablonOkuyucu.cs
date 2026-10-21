@@ -192,12 +192,8 @@ namespace SinavProgrami.DataAccess
             return null;
         }
 
+        /// <summary>Saat hücresi → "HH:mm" ("13.00" / "13:00" / gerçek saat değeri); çözülemezse metin olduğu gibi.</summary>
         private static string SaatCoz(object v)
-        {
-            if (v is DateTime dt) return SaatYardimci.Saat(dt);
-            if (v is TimeSpan ts) return SaatYardimci.GunKesrindenSaat(ts.TotalDays);
-            if (v is double d && d >= 0 && d < 1) return SaatYardimci.GunKesrindenSaat(d);
-            return SaatYardimci.Normalize(v?.ToString());
-        }
+            => SaatYardimci.HucredenSaat(v) ?? SaatYardimci.Normalize(v?.ToString());
     }
 }

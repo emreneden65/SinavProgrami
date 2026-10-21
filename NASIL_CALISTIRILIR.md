@@ -115,6 +115,15 @@ Butonlar yukarıdan aşağıya sırayla kullanılır:
 *"Sınav Takvimi ve Saat Ayarları"* bölümünden tipi seçip **Takvimi Doldur**
 dediğinde takvim bu standarda göre otomatik işaretlenir.
 
+### Öğretim yılı ve dönem (zorunlu)
+
+Aynı bölümün en üst satırında **Öğretim Yılı** (ör. 2026/2027) ve **Dönem**
+(Güz / Bahar) seçilir. İkisi de boş gelir; seçilmeden Şablon Oluştur, Otomatik
+Dağıt ve Excel çıktıları çalışmaz. Final / gözetmenli Excel'in başlıkları bu
+seçimden oluşur, örn. **"2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI"**
+(VİZE / FİNAL kısmı *Sınav Türü* seçiminden gelir). Seçim uygulama kapatılıp
+açılınca korunur; **Uygulamayı Sıfırla** temizler.
+
 ---
 
 ## BÖLÜM 4 — Derslik listesi

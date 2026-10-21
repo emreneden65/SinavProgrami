@@ -228,6 +228,8 @@ namespace SinavProgrami
                 .Select(kv => new TakvimGunu { Gun = kv.Key, Saatler = kv.Value.ToList() })
                 .ToList(),
             SinavTipi = _sinavTipi,
+            OgretimYili = _ogretimYili,
+            Yariyil = _yariyil,
             BaslangicTarihi = dtpSinavBaslangic?.Value.Date,
             Havuzlar = _sablonHavuzlari.ToList(),
             OrtakSecimYapildi = _ortakSecimYapildi,
@@ -304,6 +306,7 @@ namespace SinavProgrami
 
                 if (cmbSinavTipi != null)
                     cmbSinavTipi.SelectedIndex = _sinavTipi == SinavDonemTipi.Final ? 1 : 0;
+                OgretimDoneminiGoster(d.OgretimYili, d.Yariyil);
                 if (dtpSinavBaslangic != null && d.BaslangicTarihi.HasValue)
                     dtpSinavBaslangic.Value = d.BaslangicTarihi.Value;
                 UpdateCalendarBoldedDates();
@@ -410,6 +413,7 @@ namespace SinavProgrami
                 ("🔬 Uygulamalı Ders Salonu (Lab / Çizim)", new Control[]{ lblOverbooking, txtUygulamaliAra, dgvOverbooking }),
                 ("🎯 Hata Oranı (Bölüm Bazlı)", new Control[]{ lblHataOrani, dgvHataOrani }),
                 ("⏰ Sınav Takvimi ve Saat Ayarları", new Control[]{ separator, lblZamanBaslik,
+                    lblOgretimYili, cmbOgretimYili, pnlYariyil,
                     lblSinavTipi, cmbSinavTipi, dtpSinavBaslangic, btnTakvimDoldur,
                     calendarSinav, chkGunEtkin, flowSaatler }),
                 ("🧑‍🏫 Gözetmenler Slotu", new Control[]{ lblGozetmenBaslik, btnGozetmenYukle,
@@ -1248,6 +1252,7 @@ namespace SinavProgrami
 
                 // Gün sayfalarının salon sütunları derslik listesinden kurulur
                 if (!DersliklerYukluMu()) return;
+                if (!OgretimDonemiSecildiMi()) return;
 
                 using (var dlg = new SaveFileDialog())
                 {
@@ -1327,6 +1332,7 @@ namespace SinavProgrami
 
                 // Normal salon kapasitesi (Kural 2 için) — yüklenen derslik listesinden
                 if (!DersliklerYukluMu()) return;
+                if (!OgretimDonemiSecildiMi()) return;
                 int normalKapasite = _derslikler.Where(s => !s.UygulamaliMi).Sum(s => s.Kapasite);
 
                 lblDurum.Text = "⏳ Dersler kurallara göre dağıtılıyor...";
@@ -2032,6 +2038,7 @@ namespace SinavProgrami
                         "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
+                if (!OgretimDonemiSecildiMi()) return;
 
                 using (var dlg = new SaveFileDialog())
                 {
@@ -3385,6 +3392,7 @@ namespace SinavProgrami
 
                 // Çıktının salon sütunları yüklenen derslik listesinden gelir
                 if (!DersliklerYukluMu()) return;
+                if (!OgretimDonemiSecildiMi()) return;
                 var salonlar = _derslikler;
 
                 using (var dlg = new SaveFileDialog
@@ -3405,7 +3413,7 @@ namespace SinavProgrami
                     OgretimElemanlariniDoldur(_sonSonuclar);
 
                     // Gözetmen listesi de gönderilir — Görev Çizelgesi sayfasında bölüm eşleştirmesi için
-                    ExcelMatrisExportHelper.MatrisExcelOlustur(_sonSonuclar, salonlar, dlg.FileName, "", _gozetmenListesi);
+                    ExcelMatrisExportHelper.MatrisExcelOlustur(_sonSonuclar, salonlar, dlg.FileName, ProgramBasligi(), _gozetmenListesi);
 
                     lblDurum.Text = taslak ? "✅ Gözetmenli taslak kaydedildi — düzenleyip 'Düzenlenmiş Dosyayı Yükle'ye basın."
                                            : "✅ Final sınav programı kaydedildi!";
@@ -3531,7 +3539,7 @@ namespace SinavProgrami
             {
                 var onay = MessageBox.Show(
                     "⚠ DİKKAT!\n\nUyguladaki tüm dersler, takvim, sonuçlar, derslik listesi ve ayarlar\n" +
-                    "(havuz, ortak ders, uygulamalı ders, hata oranı) temizlenecektir!\n" +
+                    "(öğretim yılı / dönem, havuz, ortak ders, uygulamalı ders, hata oranı) temizlenecektir!\n" +
                     "Bu işlem geri alınamaz.\n\nDevam etmek istiyor musunuz?",
                     "Uygulamayı Sıfırlama Onayı",
                     MessageBoxButtons.YesNo,
@@ -3586,6 +3594,7 @@ namespace SinavProgrami
                 _bolumHataOranlari.Clear();
                 _derslikler = new List<Salon>();
                 DerslikDurumunuGoster();
+                OgretimDoneminiGoster(null, null);
                 OturumKaydi.Sil();
 
                 PrepopulateDefaultCalendar();
@@ -4416,15 +4425,19 @@ namespace SinavProgrami
             var yaziRengi = Color.FromArgb(205, 214, 244);
             var arkaplan = Color.FromArgb(49, 50, 68);
 
-            int satirUst = calendarSinav.Top;          // yeni satır takvimin bulunduğu yere girer
+            int ilkSatir = calendarSinav.Top;          // yeni satırlar takvimin bulunduğu yere girer
             const int satirYuksekligi = 30;
             const int satirBosluk = 8;
-            int kaydirma = satirYuksekligi * 2 + satirBosluk * 2;   // iki satır eklendi
+            int kaydirma = (satirYuksekligi + satirBosluk) * 3;   // üç satır eklendi
+
+            // ── 0. satır: öğretim yılı + dönem (Güz / Bahar) — ikisi de boş gelir, seçmek zorunlu ──
+            OgretimDonemiKontrolleriniKur(ilkSatir, satirYuksekligi, yaziRengi, arkaplan);
 
             // ── 1. satır: etiket + tip seçimi ──
+            int satirUst = ilkSatir + satirYuksekligi + satirBosluk;
             lblSinavTipi = new Label
             {
-                Text = "🗓 Sınav Dönemi:",
+                Text = "🗓 Sınav Türü:",
                 Location = new Point(16, satirUst + 4),
                 Size = new Size(120, 24),
                 ForeColor = Color.FromArgb(249, 226, 175),
@@ -4482,6 +4495,127 @@ namespace SinavProgrami
             panelSol.Controls.Add(dtpSinavBaslangic);
             panelSol.Controls.Add(btnTakvimDoldur);
         }
+
+        // ═══════════════════════════════════════════════════════════════
+        //  ÖĞRETİM YILI + DÖNEM (Güz / Bahar)
+        //  İkisi de boş gelir ve Excel çıktısı almadan önce seçilmek zorundadır;
+        //  final / gözetmenli Excel başlıkları bu seçimden üretilir.
+        // ═══════════════════════════════════════════════════════════════
+
+        private int? _ogretimYili;          // başlangıç yılı: 2026 → 2026/2027
+        private Yariyil? _yariyil;
+        private Label lblOgretimYili;
+        private ComboBox cmbOgretimYili;
+        private Panel pnlYariyil;
+        private RadioButton rbGuz;
+        private RadioButton rbBahar;
+
+        /// <summary>Öğretim yılı seçim kutusu öğesi ("2026/2027" görünür).</summary>
+        private sealed class YilSecenegi
+        {
+            public int Yil;
+            public override string ToString() => AkademikDonem.YilGorunen(Yil);
+        }
+
+        private void OgretimDonemiKontrolleriniKur(int ust, int yukseklik, Color yaziRengi, Color arkaplan)
+        {
+            lblOgretimYili = new Label
+            {
+                Text = "🎓 Öğretim Yılı:",
+                Location = new Point(16, ust + 4),
+                Size = new Size(120, 24),
+                ForeColor = Color.FromArgb(249, 226, 175),
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                BackColor = Color.Transparent
+            };
+
+            // Listeden seçilebilir VEYA elle yazılabilir (ör. listede olmayan "2031/2032").
+            // Liste yalnızca öneridir; geçerli değer metinden çözülür (AkademikDonem.YilCoz).
+            cmbOgretimYili = new ComboBox
+            {
+                Location = new Point(140, ust),
+                Size = new Size(110, yukseklik),
+                DropDownStyle = ComboBoxStyle.DropDown,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = arkaplan,
+                ForeColor = yaziRengi,
+                Font = new Font("Segoe UI", 9.5F)
+            };
+            foreach (int yil in AkademikDonem.YilSecenekleri(DateTime.Today))
+                cmbOgretimYili.Items.Add(new YilSecenegi { Yil = yil });
+            cmbOgretimYili.SelectedIndex = -1;   // boş gelir — seçmek zorunlu
+            cmbOgretimYili.TextChanged += (s, e) => OgretimYiliMetniniOku();
+            cmbOgretimYili.Leave += (s, e) =>
+            {
+                // Geçerli yazımı standart biçime getir: "2031-2032" / "2031" → "2031/2032"
+                if (_ogretimYili.HasValue && cmbOgretimYili.Text != AkademikDonem.YilGorunen(_ogretimYili.Value))
+                    cmbOgretimYili.Text = AkademikDonem.YilGorunen(_ogretimYili.Value);
+            };
+            new ToolTip().SetToolTip(cmbOgretimYili, "Listeden seçin veya yazın: 2026/2027 (ikinci yıl birinciden 1 fazla)");
+
+            // Radyo düğmeleri kendi panelinde — sol paneldeki diğer seçimlerle grup karışmasın
+            pnlYariyil = new Panel { Location = new Point(262, ust), Size = new Size(248, yukseklik), BackColor = Color.Transparent };
+            var lblDonem = new Label
+            {
+                Text = "Dönem:", Location = new Point(0, 4), AutoSize = true,
+                ForeColor = Color.FromArgb(249, 226, 175), Font = new Font("Segoe UI", 9.5F, FontStyle.Bold)
+            };
+            rbGuz = new RadioButton { Text = "Güz", Location = new Point(62, 3), AutoSize = true, ForeColor = yaziRengi, Font = new Font("Segoe UI", 9.5F) };
+            rbBahar = new RadioButton { Text = "Bahar", Location = new Point(128, 3), AutoSize = true, ForeColor = yaziRengi, Font = new Font("Segoe UI", 9.5F) };
+            rbGuz.CheckedChanged += (s, e) => YariyilSeciminiOku();
+            rbBahar.CheckedChanged += (s, e) => YariyilSeciminiOku();
+            pnlYariyil.Controls.AddRange(new Control[] { lblDonem, rbGuz, rbBahar });
+
+            panelSol.Controls.Add(lblOgretimYili);
+            panelSol.Controls.Add(cmbOgretimYili);
+            panelSol.Controls.Add(pnlYariyil);
+        }
+
+        private void YariyilSeciminiOku()
+            => _yariyil = rbGuz.Checked ? Yariyil.Guz : rbBahar.Checked ? Yariyil.Bahar : (Yariyil?)null;
+
+        /// <summary>Kutudaki metni öğretim yılına çevirir; yazılmış ama geçersizse kutu kırmızımsı olur.</summary>
+        private void OgretimYiliMetniniOku()
+        {
+            _ogretimYili = AkademikDonem.YilCoz(cmbOgretimYili.Text);
+            bool gecersiz = _ogretimYili == null && !string.IsNullOrWhiteSpace(cmbOgretimYili.Text);
+            cmbOgretimYili.BackColor = gecersiz ? Color.FromArgb(110, 45, 60) : Color.FromArgb(49, 50, 68);
+        }
+
+        /// <summary>Kayıtlı / sıfırlanan seçimi kontrollere yansıtır (null → boş).</summary>
+        private void OgretimDoneminiGoster(int? yil, Yariyil? yariyil)
+        {
+            // Liste dışındaki (elle yazılmış) yıllar da metin olarak gösterilir
+            cmbOgretimYili.SelectedIndex = -1;
+            cmbOgretimYili.Text = yil.HasValue ? AkademikDonem.YilGorunen(yil.Value) : "";
+
+            rbGuz.Checked = yariyil == Yariyil.Guz;
+            rbBahar.Checked = yariyil == Yariyil.Bahar;
+            _ogretimYili = yil;
+            _yariyil = yariyil;
+        }
+
+        /// <summary>Excel çıktısından önce çağrılır; öğretim yılı veya dönem seçilmemişse uyarır.</summary>
+        private bool OgretimDonemiSecildiMi()
+        {
+            var eksik = new List<string>();
+            if (_ogretimYili == null)
+                eksik.Add(string.IsNullOrWhiteSpace(cmbOgretimYili.Text)
+                    ? "öğretim yılı"
+                    : $"geçerli bir öğretim yılı ('{cmbOgretimYili.Text.Trim()}' geçersiz — 2026/2027 biçiminde yazın)");
+            if (_yariyil == null) eksik.Add("dönem (Güz / Bahar)");
+            if (eksik.Count == 0) return true;
+
+            MessageBox.Show($"Önce {string.Join(" ve ", eksik)} seçilmeli.\n\n" +
+                "Sol paneldeki '⏰ Sınav Takvimi ve Saat Ayarları' bölümünün en üst satırından seçin. " +
+                "Excel başlıkları (ör. \"2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI\") bu seçimden oluşur.",
+                "Öğretim Yılı / Dönem Gerekli", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        /// <summary>Seçili öğretim yılı, dönem ve sınav türünden Excel program başlığı.</summary>
+        private string ProgramBasligi()
+            => AkademikDonem.ProgramBasligi(_ogretimYili.Value, _yariyil.Value, _sinavTipi);
 
         /// <summary>
         /// Excel'den yüklenen takvimin gün sayısına bakarak sınav dönemi tipini günceller

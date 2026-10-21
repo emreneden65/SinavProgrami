@@ -22,5 +22,25 @@ namespace SinavProgrami.Models
             if (b.Contains("MAKİN") || b.Contains("MAKIN") || b.Contains("MAK")) return "MAK";
             return b.Length >= 3 ? b.Substring(0, 3) : b;
         }
+
+        /// <summary>
+        /// Bölümün resmi tam adı (büyük harf, "BÖLÜMÜ" eki olmadan) — Excel form başlıkları için.
+        /// Kısaltma ("BİL", "ELM") ya da herhangi bir yazımdaki tam ad verilebilir;
+        /// tanınmayan bölüm olduğu gibi döner.
+        /// </summary>
+        public static string TamAd(string bolumAdi)
+        {
+            string kisa = (bolumAdi ?? "").Trim().ToUpperInvariant() == "ELM" ? "EEM" : Kisalt(bolumAdi);
+            switch (kisa)
+            {
+                case "BİL": return "BİLGİSAYAR MÜHENDİSLİĞİ";
+                case "EEM": return "ELEKTRİK-ELEKTRONİK MÜHENDİSLİĞİ";
+                case "INS": return "İNŞAAT MÜHENDİSLİĞİ";
+                case "MAK": return "MAKİNE MÜHENDİSLİĞİ";
+                case "MEK": return "MEKATRONİK MÜHENDİSLİĞİ";
+                case "MEM": return "METALURJİ VE MALZEME MÜHENDİSLİĞİ";
+                default: return (bolumAdi ?? "").Trim();
+            }
+        }
     }
 }

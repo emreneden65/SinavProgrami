@@ -37,5 +37,58 @@ namespace SinavProgrami.Models
             var m = Regex.Match(s, @"(\d{1,2}):(\d{2})");
             return m.Success ? $"{int.Parse(m.Groups[1].Value):00}:{m.Groups[2].Value}" : s;
         }
+
+        /// <summary>
+        /// Excel çıktılarında saatin görünen biçimi: "13:00" → "13.00".
+        /// (Uygulama içinde saatler "13:00" olarak tutulur; yalnızca Excel'e yazarken çevrilir.)
+        /// </summary>
+        public static string ExcelMetni(string saat) => Normalize(saat).Replace(':', '.');
+
+        /// <summary>Excel'e gerçek saat değeri yazıldığında kullanılan biçim (13.00 görünür).</summary>
+        public const string ExcelSaatBicimi = "hh\".\"mm;@";
+
+        /// <summary>
+        /// Geri yüklenen Excel hücresindeki saati "HH:mm"e çevirir; çözemezse null.
+        /// Kabul: gerçek saat değeri (gün kesri / DateTime / TimeSpan), "13:00" ve "13.00" metni,
+        /// ayrıca elle yazılan "13.00"ın Türkçe Excel'de dönüşebildiği sayılar (13 → 13:00, 13,3 → 13:30, 1300 → 13:00).
+        /// </summary>
+        public static string HucredenSaat(object v)
+        {
+            switch (v)
+            {
+                case DateTime dt: return Saat(dt);
+                case TimeSpan ts: return GunKesrindenSaat(ts.TotalDays);
+                case double d:
+                    if (d >= 0 && d < 1) return GunKesrindenSaat(d);              // gerçek saat değeri
+                    if (d > 40000) return GunKesrindenSaat(d - Math.Floor(d));     // tarih + saat
+                    return SayidanSaat(d);
+                case int i: return SayidanSaat(i);
+            }
+
+            string s = v?.ToString()?.Trim() ?? "";
+            var m = Regex.Match(s, @"(\d{1,2}):(\d{2})");
+            if (!m.Success) m = Regex.Match(s, @"^(\d{1,2})\.(\d{2})$");   // "13.00" — tarih metinleriyle karışmasın diye tam eşleşme
+            if (!m.Success) return null;
+            int saat = int.Parse(m.Groups[1].Value), dakika = int.Parse(m.Groups[2].Value);
+            return saat < 24 && dakika < 60 ? $"{saat:00}:{dakika:00}" : null;
+        }
+
+        /// <summary>Hücreye elle yazılıp sayıya dönüşmüş saat: 13 / 13,3 (ondalık) veya 1300 (binlik ayırıcı).</summary>
+        private static string SayidanSaat(double d)
+        {
+            int saat, dakika;
+            if (d >= 1 && d < 24)
+            {
+                saat = (int)Math.Floor(d);
+                dakika = (int)Math.Round((d - saat) * 100);
+            }
+            else if (d >= 100 && d < 2400 && d == Math.Floor(d))
+            {
+                saat = (int)d / 100;
+                dakika = (int)d % 100;
+            }
+            else return null;
+            return dakika < 60 ? $"{saat:00}:{dakika:00}" : null;
+        }
     }
 }

@@ -38,11 +38,14 @@ namespace SinavProgrami.DataAccess
         /// <param name="sonuclar">Algoritma çıktısı — tüm sınav atamaları</param>
         /// <param name="salonlar">Veritabanındaki tüm salonlar</param>
         /// <param name="dosyaYolu">Çıktı .xlsx dosyasının kaydedileceği yol</param>
-        /// <param name="donem">Seçili dönem (Güz/Bahar)</param>
+        /// <param name="programBasligi">Seçili öğretim yılı / dönem / sınav türü başlığı
+        /// (ör. "2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI") — tüm sayfa başlıklarında kullanılır.</param>
         /// <param name="gozetmenler">Gözetmen listesi — görev çizelgesinde bölüm eşleştirmesi için (opsiyonel)</param>
         public static void MatrisExcelOlustur(List<SinavAtama> sonuclar, List<Salon> salonlar,
-            string dosyaYolu, string donem = "", List<Gozetmen> gozetmenler = null)
+            string dosyaYolu, string programBasligi = "", List<Gozetmen> gozetmenler = null)
         {
+            if (string.IsNullOrWhiteSpace(programBasligi)) programBasligi = "SINAV PROGRAMI";
+
             if (sonuclar == null || sonuclar.Count == 0)
                 throw new ArgumentException("Dışa aktarılacak sınav sonucu bulunamadı.");
 
@@ -74,7 +77,7 @@ namespace SinavProgrami.DataAccess
                 // ═══════════════════════════════════════════
                 // ÜST BAŞLIK
                 // ═══════════════════════════════════════════
-                string donemAciklama = "YARIYIL İÇİ SINAV PROGRAMI MATRİS TABLOSU";
+                string donemAciklama = $"{programBasligi} MATRİS TABLOSU";
 
                 int toplamSutun = 6 + salonKodlari.Count; // Sabit 6 sütun + salon sütunları
 
@@ -214,7 +217,7 @@ namespace SinavProgrami.DataAccess
                     ws.Cells[currentRow, 1].Value = atama.BolumAdi;
                     ws.Cells[currentRow, 2].Value = atama.SinifSeviyesi == 0 ? "T. Seçmeli" : $"{atama.SinifSeviyesi}. Sınıf";
                     ws.Cells[currentRow, 3].Value = $"{gunAdlari[atama.Gun.DayOfWeek]} {atama.Gun:dd.MM.yyyy}";
-                    ws.Cells[currentRow, 4].Value = atama.Saat;
+                    ws.Cells[currentRow, 4].Value = SaatYardimci.ExcelMetni(atama.Saat);
                     ws.Cells[currentRow, 5].Value = atama.DersEtiketi;
                     ws.Cells[currentRow, 6].Value = atama.Kontenjan;
 
@@ -305,12 +308,12 @@ namespace SinavProgrami.DataAccess
                 // ═══════════════════════════════════════════
                 // SLOT BAZLI SINAV PLANI SAYFASI
                 // ═══════════════════════════════════════════
-                SlotBazliOzetOlustur(package, sonuclar, siraliSalonlar, donemAciklama);
+                SlotBazliOzetOlustur(package, sonuclar, siraliSalonlar, programBasligi);
 
                 // ═══════════════════════════════════════════
                 // SINAV PROGRAMI FORMU (Resmi Üniversite Formatı)
                 // ═══════════════════════════════════════════
-                SinavProgramiFormuOlustur(package, sonuclar);
+                SinavProgramiFormuOlustur(package, sonuclar, programBasligi);
 
                 // ═══════════════════════════════════════════
                 // SINAV PROGRAMI FORMU (GÖZETMENLİ)
@@ -318,13 +321,13 @@ namespace SinavProgrami.DataAccess
                 // salonun hemen yanında o salona atanan gözetmen adı da yer alır.
                 // Bağımsız bir sayfadır — sade form bozulmadan korunur.
                 // ═══════════════════════════════════════════
-                SinavProgramiFormuGozetmenliOlustur(package, sonuclar);
+                SinavProgramiFormuGozetmenliOlustur(package, sonuclar, programBasligi);
 
                 // ═══════════════════════════════════════════
                 // GÖREV ÇİZELGESİ — kişi bazlı gün/saat/salon (bölüm bölüm)
                 // Gözetmen ataması yapılmışsa oluşturulur
                 // ═══════════════════════════════════════════
-                GorevCizelgesiOlustur(package, sonuclar, gozetmenler);
+                GorevCizelgesiOlustur(package, sonuclar, gozetmenler, programBasligi);
 
                 // ═══════════════════════════════════════════
                 // KAYDET
@@ -512,7 +515,7 @@ namespace SinavProgrami.DataAccess
                 // Slot ayırıcı satır (koyu renk)
                 var ayiriciRange = ws.Cells[row, 1, row, basliklar.Length];
                 ayiriciRange.Merge = true;
-                ayiriciRange.Value = $"📅 {gunAdi} {tarihStr} — Saat: {saat}";
+                ayiriciRange.Value = $"📅 {gunAdi} {tarihStr} — Saat: {SaatYardimci.ExcelMetni(saat)}";
                 ayiriciRange.Style.Font.Bold = true;
                 ayiriciRange.Style.Font.Size = 11;
                 ayiriciRange.Style.Font.Color.SetColor(BaslikYazi);
@@ -543,7 +546,7 @@ namespace SinavProgrami.DataAccess
 
                     ws.Cells[row, 1].Value = tarihStr;
                     ws.Cells[row, 2].Value = gunAdi;
-                    ws.Cells[row, 3].Value = saat;
+                    ws.Cells[row, 3].Value = SaatYardimci.ExcelMetni(saat);
                     ws.Cells[row, 4].Value = sinav.BolumAdi;
                     ws.Cells[row, 5].Value = sinav.DersEtiketi;
                     ws.Cells[row, 6].Value = sinav.Kontenjan;
@@ -667,7 +670,42 @@ namespace SinavProgrami.DataAccess
         // Sütunlar: TARİH | SAAT | DERSİN ADI | SINIF (salon) | ÖĞRETİM ELEMANI
         // ═══════════════════════════════════════════════════════════════════
 
-        private static void SinavProgramiFormuOlustur(ExcelPackage package, List<SinavAtama> sonuclar)
+        /// <summary>Sınav Programı Formu başlık bloğundaki üç satırın ortak puntosu.</summary>
+        private const float FormBaslikPuntosu = 11f;
+
+        /// <summary>
+        /// Sınav Programı Formu başlık bloğu — sade ve gözetmenli formda ortak:
+        ///   TEKNOLOJİ FAKÜLTESİ
+        ///   BİLGİSAYAR MÜHENDİSLİĞİ 1. SINIF      (bölümün tam adı, kısaltma değil)
+        ///   2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI
+        /// Üç satır da aynı puntoda, kalın ve ortalı yazılır. Bir sonraki boş satırı döner.
+        /// </summary>
+        private static int FormBaslikBlokuYaz(ExcelWorksheet ws, int satir, int toplamSutun,
+                                              string bolumAdi, int sinifSeviyesi, string donemSatiri)
+        {
+            var satirlar = new (string Metin, double Yukseklik)[]
+            {
+                ("TEKNOLOJİ FAKÜLTESİ", 22),
+                ($"{BolumYardimci.TamAd(bolumAdi)} {SinifBasligi(sinifSeviyesi)}", 20),
+                (donemSatiri, 20),
+            };
+
+            foreach (var (metin, yukseklik) in satirlar)
+            {
+                ws.Cells[satir, 1].Value = metin;
+                var aralik = ws.Cells[satir, 1, satir, toplamSutun];
+                aralik.Merge = true;
+                aralik.Style.Font.Bold = true;
+                aralik.Style.Font.Size = FormBaslikPuntosu;
+                aralik.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+                aralik.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
+                ws.Row(satir).Height = yukseklik;
+                satir++;
+            }
+            return satir;
+        }
+
+        private static void SinavProgramiFormuOlustur(ExcelPackage package, List<SinavAtama> sonuclar, string programBasligi)
         {
             var ws = package.Workbook.Worksheets.Add("Sınav Programı Formu");
 
@@ -702,39 +740,8 @@ namespace SinavProgrami.DataAccess
                 string bolumAdi = grup.Key.BolumAdi;
                 int sinifSeviyesi = grup.Key.SinifSeviyesi;
 
-                // ─── BAŞLIK BLOĞU ───
-                // Satır 1: TEKNOLOJİ FAKÜLTESİ
-                ws.Cells[currentRow, 1].Value = "TEKNOLOJİ FAKÜLTESİ";
-                var ustBaslik = ws.Cells[currentRow, 1, currentRow, toplamSutun];
-                ustBaslik.Merge = true;
-                ustBaslik.Style.Font.Bold = true;
-                ustBaslik.Style.Font.Size = 12;
-                ustBaslik.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                ustBaslik.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                ws.Row(currentRow).Height = 22;
-                currentRow++;
-
-                // Satır 2: BÖLÜM ADI + SINIF
-                ws.Cells[currentRow, 1].Value = $"{bolumAdi} {SinifBasligi(sinifSeviyesi)}";
-                var bolumBaslik = ws.Cells[currentRow, 1, currentRow, toplamSutun];
-                bolumBaslik.Merge = true;
-                bolumBaslik.Style.Font.Bold = true;
-                bolumBaslik.Style.Font.Size = 11;
-                bolumBaslik.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                bolumBaslik.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                ws.Row(currentRow).Height = 20;
-                currentRow++;
-
-                // Satır 3: Dönem bilgisi
-                ws.Cells[currentRow, 1].Value = "2025-2026 ÖĞRETİM YILI BAHAR DÖNEMİ FİNAL SINAV PROGRAMI";
-                var donemBaslik = ws.Cells[currentRow, 1, currentRow, toplamSutun];
-                donemBaslik.Merge = true;
-                donemBaslik.Style.Font.Bold = true;
-                donemBaslik.Style.Font.Size = 10;
-                donemBaslik.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                donemBaslik.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                ws.Row(currentRow).Height = 20;
-                currentRow++;
+                // ─── BAŞLIK BLOĞU (fakülte / bölüm + sınıf / dönem) ───
+                currentRow = FormBaslikBlokuYaz(ws, currentRow, toplamSutun, bolumAdi, sinifSeviyesi, programBasligi);
 
                 // ─── TABLO BAŞLIKLARI ───
                 int baslikRow = currentRow;
@@ -777,7 +784,7 @@ namespace SinavProgrami.DataAccess
                     ws.Cells[currentRow, 1].Value = sinav.Gun.ToString("dd.MM.yyyy");
 
                     // SAAT
-                    ws.Cells[currentRow, 2].Value = sinav.Saat;
+                    ws.Cells[currentRow, 2].Value = SaatYardimci.ExcelMetni(sinav.Saat);
 
                     // DERSİN ADI (şubeleri ayrı göster: "FİZİK II (A)", "FİZİK II (B)")
                     string dersAdi = sinav.DersEtiketi;
@@ -859,7 +866,7 @@ namespace SinavProgrami.DataAccess
         // Gözetmen ataması hiç yapılmamışsa sayfa OLUŞTURULMAZ (boş sekme üretilmez).
         // ═══════════════════════════════════════════════════════════════════
 
-        private static void SinavProgramiFormuGozetmenliOlustur(ExcelPackage package, List<SinavAtama> sonuclar)
+        private static void SinavProgramiFormuGozetmenliOlustur(ExcelPackage package, List<SinavAtama> sonuclar, string programBasligi)
         {
             // Hiçbir salona gözetmen atanmamışsa bu sayfaya gerek yok
             bool gozetmenVarMi = sonuclar.Any(s => s.AtananSalonlar != null &&
@@ -900,37 +907,8 @@ namespace SinavProgrami.DataAccess
                 string bolumAdi = grup.Key.BolumAdi;
                 int sinifSeviyesi = grup.Key.SinifSeviyesi;
 
-                // ─── BAŞLIK BLOĞU ───
-                ws.Cells[currentRow, 1].Value = "TEKNOLOJİ FAKÜLTESİ";
-                var ustBaslik = ws.Cells[currentRow, 1, currentRow, toplamSutun];
-                ustBaslik.Merge = true;
-                ustBaslik.Style.Font.Bold = true;
-                ustBaslik.Style.Font.Size = 12;
-                ustBaslik.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                ustBaslik.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                ws.Row(currentRow).Height = 22;
-                currentRow++;
-
-                ws.Cells[currentRow, 1].Value = $"{bolumAdi} {SinifBasligi(sinifSeviyesi)}";
-                var bolumBaslik = ws.Cells[currentRow, 1, currentRow, toplamSutun];
-                bolumBaslik.Merge = true;
-                bolumBaslik.Style.Font.Bold = true;
-                bolumBaslik.Style.Font.Size = 11;
-                bolumBaslik.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                bolumBaslik.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                ws.Row(currentRow).Height = 20;
-                currentRow++;
-
-                ws.Cells[currentRow, 1].Value =
-                    "2025-2026 ÖĞRETİM YILI BAHAR DÖNEMİ FİNAL SINAV PROGRAMI (GÖZETMENLİ)";
-                var donemBaslik = ws.Cells[currentRow, 1, currentRow, toplamSutun];
-                donemBaslik.Merge = true;
-                donemBaslik.Style.Font.Bold = true;
-                donemBaslik.Style.Font.Size = 10;
-                donemBaslik.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                donemBaslik.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                ws.Row(currentRow).Height = 20;
-                currentRow++;
+                // ─── BAŞLIK BLOĞU (sade formla birebir aynı — "(GÖZETMENLİ)" eki yok) ───
+                currentRow = FormBaslikBlokuYaz(ws, currentRow, toplamSutun, bolumAdi, sinifSeviyesi, programBasligi);
 
                 // ─── TABLO BAŞLIKLARI ───
                 int baslikRow = currentRow;
@@ -969,7 +947,7 @@ namespace SinavProgrami.DataAccess
                 foreach (var sinav in dersler)
                 {
                     ws.Cells[currentRow, 1].Value = sinav.Gun.ToString("dd.MM.yyyy");
-                    ws.Cells[currentRow, 2].Value = sinav.Saat;
+                    ws.Cells[currentRow, 2].Value = SaatYardimci.ExcelMetni(sinav.Saat);
 
                     // DERSİN ADI — şube parantez içinde: "FİZİK II (A)"
                     string dersAdi = sinav.DersEtiketi;
@@ -1078,7 +1056,7 @@ namespace SinavProgrami.DataAccess
         // ═══════════════════════════════════════════════════════════════════
 
         private static void GorevCizelgesiOlustur(ExcelPackage package, List<SinavAtama> sonuclar,
-            List<Gozetmen> gozetmenler)
+            List<Gozetmen> gozetmenler, string programBasligi)
         {
             // ── Görev kayıtlarını topla: salon atamalarındaki gözetmen adları üzerinden ──
             var hamGorevler = new List<(string Kisi, DateTime Gun, string Saat, string Salon, string Ders)>();
@@ -1133,7 +1111,7 @@ namespace SinavProgrami.DataAccess
             int toplamSutun = 6; // Öğretim Elemanı | Tarih | Gün | Saat | Salon | Ders
 
             // ── Üst başlık ──
-            ws.Cells[1, 1].Value = "ÖĞRETİM ELEMANI GÖREV ÇİZELGESİ (GÖZETMENLİK)";
+            ws.Cells[1, 1].Value = $"ÖĞRETİM ELEMANI GÖREV ÇİZELGESİ (GÖZETMENLİK) — {programBasligi}";
             var ustBaslik = ws.Cells[1, 1, 1, toplamSutun];
             ustBaslik.Merge = true;
             ustBaslik.Style.Font.Bold = true;
@@ -1210,7 +1188,7 @@ namespace SinavProgrami.DataAccess
                         ws.Cells[currentRow, 2].Value = gorev.Gun.ToString("dd.MM.yyyy");
                         ws.Cells[currentRow, 3].Value = gunAdlari.ContainsKey(gorev.Gun.DayOfWeek)
                             ? gunAdlari[gorev.Gun.DayOfWeek] : gorev.Gun.DayOfWeek.ToString();
-                        ws.Cells[currentRow, 4].Value = gorev.Saat;
+                        ws.Cells[currentRow, 4].Value = SaatYardimci.ExcelMetni(gorev.Saat);
                         ws.Cells[currentRow, 5].Value = gorev.Salon;
                         ws.Cells[currentRow, 6].Value = gorev.Ders;
 

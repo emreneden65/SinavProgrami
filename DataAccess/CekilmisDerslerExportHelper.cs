@@ -355,7 +355,7 @@ namespace SinavProgrami.DataAccess
                     {
                         ws.Cells[r2, col + 0].Value = bolum;   // Bölüm
                         ws.Cells[r2, col + 1].Value = null;    // Sınıf
-                        ws.Cells[r2, col + 2].Value = saat;    // Saat
+                        ws.Cells[r2, col + 2].Value = SaatYardimci.ExcelMetni(saat);    // Saat (13.00)
                         for (int c = 3; c < BlokGenisligi; c++) ws.Cells[r2, col + c].Value = null;
 
                         // Otomatik dağıtım hücresi doldur
@@ -482,7 +482,7 @@ namespace SinavProgrami.DataAccess
                         yeni.Cells[r, 2].Value = null;    // SINIF
                         yeni.Cells[r, 3].Value = gun;     // Tarih
                         yeni.Cells[r, 3].Style.Numberformat.Format = "dd.mm.yyyy";
-                        yeni.Cells[r, 4].Value = saat;    // Saat
+                        yeni.Cells[r, 4].Value = SaatYardimci.ExcelMetni(saat);    // Saat (13.00)
                         for (int c = 5; c <= 9; c++) yeni.Cells[r, c].Value = null; // Dersler/A/B/C/D
                         r++;
                     }

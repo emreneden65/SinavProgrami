@@ -31,6 +31,9 @@ static class Program
             GozetmenAgirlikTestleri.Calistir(t); // Madde 4 — ağırlık görev sayısına oranlı yansır
             PencereTestleri.Calistir(t);         // Madde 5 — pencere tam ekran / boyutlandırma
             SalonSirasiTestleri.Calistir(t);     // Madde 6 — taslak / final Excel'inde T4 bloğu önce
+            OgretimDonemiTestleri.Calistir(t);   // Madde 7 — öğretim yılı + dönem (Güz / Bahar)
+            FormBaslikTestleri.Calistir(t);      // Madde 8 — form başlığında tam bölüm adı, 11 punto
+            SaatBicimiTestleri.Calistir(t);      // Madde 9 — "(GÖZETMENLİ)" kalktı, Excel'de saat 13.00
         }
         finally
         {

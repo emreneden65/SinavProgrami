@@ -239,24 +239,8 @@ namespace SinavProgrami.DataAccess
             return null;
         }
 
-        private static string SaatFormatla(object v)
-        {
-            switch (v)
-            {
-                case DateTime dt: return SaatYardimci.Saat(dt);
-                case TimeSpan ts: return SaatYardimci.GunKesrindenSaat(ts.TotalDays);
-                case double d:
-                    if (d >= 0 && d < 1)
-                        return SaatYardimci.GunKesrindenSaat(d);   // 13:00 → 12:59 kesme hatası yok
-                    if (d > 40000)
-                        return SaatYardimci.GunKesrindenSaat(d - Math.Floor(d));
-                    return null;
-            }
-            string s = v?.ToString()?.Trim();
-            if (string.IsNullOrEmpty(s)) return null;
-            var m = Regex.Match(s, @"(\d{1,2}):(\d{2})");
-            return m.Success ? $"{int.Parse(m.Groups[1].Value):00}:{m.Groups[2].Value}" : null;
-        }
+        /// <summary>Saat hücresi → "HH:mm" ("13.00" / "13:00" / gerçek saat değeri); çözülemezse null.</summary>
+        private static string SaatFormatla(object v) => SaatYardimci.HucredenSaat(v);
 
         private static int? SayiCoz(object v)
         {
