@@ -32,13 +32,8 @@ namespace SinavProgrami.DataAccess
         private const int BlokGenisligi = 8;          // Bölüm|Sınıf|Saat|Ders Adı|A|B|C|D
         private const int MaxGrup = 4;                // 0..4 → 5 blok
 
-        // ── ÇOK HAFTALI (ÇOK BANTLI) ŞABLON TAKVİMİ ──
-        /// <summary>Şablon sayfasının 1. bandındaki tarih satırı.</summary>
+        /// <summary>Şablon sayfasındaki tarih satırı (tüm günler bu satırda yan yana).</summary>
         private const int IlkTarihSatiri = 2;
-        /// <summary>Bantlar arasına bırakılan boş satır sayısı (hafta ayrımı görünür olsun).</summary>
-        private const int BantAraBosluk = 2;
-        /// <summary>Bir banda yatayda sığan gün bloğu sayısı (şablon genişliğinden hesaplanır; tipik 7).</summary>
-        private const int BantBasinaGun = 7;
 
         /// <summary>Şablondaki 6 bölüm (satır sırası korunur).</summary>
         private static readonly string[] Bolumler = { "BİL", "EEM", "INS", "MAK", "MEK", "MEM" };
@@ -147,9 +142,6 @@ namespace SinavProgrami.DataAccess
                 .ToList();
 
             var gunler = takvim.Keys.OrderBy(d => d).ToList();
-            if (gunler.Count > 7)
-                uyarilar.Add($"{gunler.Count} gün seçildi ancak 'Sınav Haftası Dağıtım Şablonu' sayfasında 7 gün bloğu var. " +
-                             "İlk 7 gün şablona yazıldı; tüm günler için ayrı 'Sınav Günü' sayfası yine de oluşturuldu.");
 
             using (var paket = new ExcelPackage(new FileInfo(SablonYolu)))
             {
@@ -292,17 +284,17 @@ namespace SinavProgrami.DataAccess
         // ═══════════════ 2) ŞABLON TAKVİMİ (tarih + saat satırları) ═══════════════
 
         /// <summary>
-        /// ÇOK BANTLI (ÇOK HAFTALI) ŞABLON TAKVİMİ.
+        /// TEK BANTLI ŞABLON TAKVİMİ.
         /// ──────────────────────────────────────────────────────────────
-        /// Sayfa yatayda yalnızca <see cref="BantBasinaGun"/> (7) gün bloğu taşıyabildiğinden,
-        /// 7 günden uzun dönemler (Final = 12 gün) ALT ALTA BANTLARA yazılır:
+        /// Seçilen TÜM sınav günleri tek bantta, yan yana yazılır:
         ///
-        ///   BANT 1 (1. Hafta)  → satır 2: tarihler | satır 3: kolon başlıkları | satır 4+: veri
-        ///   [boşluk]
-        ///   BANT 2 (2. Hafta)  → aynı düzen, bant yüksekliği kadar aşağıda
+        ///   satır 2: tarihler | satır 3: kolon başlıkları | satır 4+: veri
         ///
-        /// Bu yapı, çok bantlı okumayı zaten destekleyen <c>DagitimSablonuOkuyucu</c> ile
-        /// birebir uyumludur; kullanıcı dosyayı elle doldurup geri yükleyebilir.
+        /// Takvim hafta sınırında BÖLÜNMEZ — dönem Perşembe başlasa da günler alt alta
+        /// iki banda dağılmaz. Şablon dosyasında 7 gün bloğu hazırdır; daha fazla gün
+        /// seçildiyse (Final = 10 gün) eksik bloklar 1. bloğun biçimiyle sağa eklenir.
+        /// <c>DagitimSablonuOkuyucu</c> tarih satırındaki tüm blokları okuduğundan
+        /// kullanıcı dosyayı elle doldurup geri yükleyebilir.
         /// </summary>
         private static void SablonTakvimiYaz(ExcelPackage paket, List<DateTime> gunler,
                                              Dictionary<DateTime, List<string>> takvim, List<SinavAtama> dagitim,
@@ -315,159 +307,125 @@ namespace SinavProgrami.DataAccess
             var hucreler = DagitimHucreleri(dagitim, uyarilar);
 
             int sonKolon = ws.Dimension.End.Column;
-            int bantBasinaBlok = Math.Max(1, sonKolon / BlokGenisligi);   // şablonda 7 blok
+            int sablonBlokSayisi = Math.Max(1, sonKolon / BlokGenisligi);   // şablonda 7 blok
+            int blokSayisi = Math.Max(sablonBlokSayisi, gunler.Count);
             int maxSaat = takvim.Count > 0 ? takvim.Values.Max(v => v.Count) : 5;
             int veriSatirSayisi = Bolumler.Length * Math.Max(maxSaat, 1);
 
-            // Bant yüksekliği: tarih + başlık + veri + 2 satır boşluk
-            int bantYuksekligi = 2 + veriSatirSayisi + BantAraBosluk;
+            int tarihSatiri = IlkTarihSatiri;
+            int baslikSatiri = tarihSatiri + 1;
+            int veriBaslangic = tarihSatiri + 2;
+            int veriBitis = veriBaslangic + veriSatirSayisi - 1;
 
-            // ── BANT = TAKVİM HAFTASI ──────────────────────────────────
-            // Bantlar 7 blok dolana kadar değil, HAFTA SINIRINDA kırılır:
-            // her hafta kendi bandına yazılır (Final'de 1. hafta 5 gün, 2. hafta 5 gün;
-            // kalan bloklar boş bırakılır). Böylece çıktı "1. Hafta / 2. Hafta"
-            // olarak okunur ve hafta sonları görsel olarak da boş kalır.
-            var haftaGruplari = gunler
-                .GroupBy(g => SinavTipi.HaftaNo(g, gunler))
-                .OrderBy(g => g.Key)
-                .Select(g => g.OrderBy(d => d).Take(bantBasinaBlok).ToList())
-                .ToList();
-            if (haftaGruplari.Count == 0)
-                haftaGruplari.Add(new List<DateTime>());
-
-            int bantSayisi = haftaGruplari.Count;
-
-            for (int bant = 0; bant < bantSayisi; bant++)
-            {
-                var bantGunleri = haftaGruplari[bant];
-                int tarihSatiri = IlkTarihSatiri + bant * bantYuksekligi;
-                int baslikSatiri = tarihSatiri + 1;
-                int veriBaslangic = tarihSatiri + 2;
-                int veriBitis = veriBaslangic + veriSatirSayisi - 1;
-
-                // 2. ve sonraki bantlar şablonda hazır değildir — başlık satırı kod ile yazılır
-                if (bant > 0)
-                    BantBasligiYaz(ws, baslikSatiri, bantBasinaBlok);
-
-                for (int blok = 0; blok < bantBasinaBlok; blok++)
-                {
-                    int col = 1 + blok * BlokGenisligi;
-
-                    if (blok >= bantGunleri.Count)
-                    {
-                        // Kullanılmayan gün bloğu — tarih ve içerik temizlenir
-                        ws.Cells[tarihSatiri, col].Value = null;
-                        for (int r = veriBaslangic; r <= veriBitis; r++)
-                            for (int c = 0; c < BlokGenisligi; c++) ws.Cells[r, col + c].Value = null;
-                        continue;
-                    }
-
-                    DateTime gun = bantGunleri[blok];
-                    var saatler = (takvim.TryGetValue(gun, out var s) ? s : new List<string>())
-                        .OrderBy(SaatYardimci.Anahtar).ToList();
-
-                    var tarihH = ws.Cells[tarihSatiri, col];
-                    tarihH.Value = gun;
-                    tarihH.Style.Numberformat.Format = "dd.mm.yyyy";
-                    tarihH.Style.Font.Bold = true;
-                    tarihH.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-
-                    int r2 = veriBaslangic;
-                    int saatIndex = 0;
-                    foreach (var saat in saatler)
-                    {
-                        int blokBas = r2; // bu saat grubunun ilk satırı
-                        foreach (var bolum in Bolumler)
-                        {
-                            ws.Cells[r2, col + 0].Value = bolum;   // Bölüm
-                            ws.Cells[r2, col + 1].Value = null;    // Sınıf
-                            ws.Cells[r2, col + 2].Value = saat;    // Saat
-                            for (int c = 3; c < BlokGenisligi; c++) ws.Cells[r2, col + c].Value = null;
-
-                            // Otomatik dağıtım hücresi doldur
-                            if (hucreler.TryGetValue(HucreAnahtar(bolum, gun, saat), out var icerik))
-                            {
-                                ws.Cells[r2, col + 1].Value = icerik.Sinif;      // Sınıf
-                                ws.Cells[r2, col + 3].Value = icerik.DersAdi;    // Ders Adı
-                                YazHarf(ws, r2, col + 4, icerik.Harfler, "A");
-                                YazHarf(ws, r2, col + 5, icerik.Harfler, "B");
-                                YazHarf(ws, r2, col + 6, icerik.Harfler, "C");
-                                YazHarf(ws, r2, col + 7, icerik.Harfler, SubeEtiketi.DordunculSube);
-                            }
-
-                            var rng = ws.Cells[r2, col, r2, col + BlokGenisligi - 1];
-                            rng.Style.Border.Top.Style = ExcelBorderStyle.Thin;
-                            rng.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
-                            rng.Style.Border.Left.Style = ExcelBorderStyle.Thin;
-                            rng.Style.Border.Right.Style = ExcelBorderStyle.Thin;
-                            r2++;
-                        }
-
-                        // ── GÖRSEL SAAT AYRIMI ──
-                        // Her saat grubu (6 bölüm satırı) net biçimde ayrılır:
-                        //  • grubun üstü/altı KALIN çerçeve,
-                        //  • gruplar dönüşümlü açık zemin (zebra),
-                        //  • Saat kolonu kalın yazı + orta hizalı.
-                        var saatBlogu = ws.Cells[blokBas, col, r2 - 1, col + BlokGenisligi - 1];
-                        ws.Cells[blokBas, col, blokBas, col + BlokGenisligi - 1]
-                            .Style.Border.Top.Style = ExcelBorderStyle.Medium;
-                        ws.Cells[r2 - 1, col, r2 - 1, col + BlokGenisligi - 1]
-                            .Style.Border.Bottom.Style = ExcelBorderStyle.Medium;
-                        if (saatIndex % 2 == 1)
-                        {
-                            saatBlogu.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                            saatBlogu.Style.Fill.BackgroundColor.SetColor(
-                                System.Drawing.Color.FromArgb(235, 238, 245)); // açık gri-mavi
-                        }
-                        var saatKolonu = ws.Cells[blokBas, col + 2, r2 - 1, col + 2];
-                        saatKolonu.Style.Font.Bold = true;
-                        saatKolonu.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-
-                        saatIndex++;
-                    }
-
-                    // Bloktaki artık satırları temizle
-                    for (; r2 <= veriBitis; r2++)
-                        for (int c = 0; c < BlokGenisligi; c++) ws.Cells[r2, col + c].Value = null;
-                }
-            }
-
-            // Şablonda kalmış eski (artık kullanılmayan) alt bantları temizle
-            int sonKullanilanSatir = IlkTarihSatiri + bantSayisi * bantYuksekligi;
-            for (int r = sonKullanilanSatir; r <= ws.Dimension.End.Row; r++)
-                for (int c = 1; c <= sonKolon; c++) ws.Cells[r, c].Value = null;
-        }
-
-        /// <summary>
-        /// 2. ve sonraki bantların kolon başlık satırını yazar
-        /// (şablon dosyasında yalnızca 1. bandın başlığı hazır bulunur).
-        /// NOT: Eskiden bandın soluna "▼ n. HAFTA" etiketi düşerdi; kullanıcı kuralı
-        /// gereği hafta etiketleri Excel çıktılarından kaldırıldı.
-        /// </summary>
-        private static void BantBasligiYaz(ExcelWorksheet ws, int baslikSatiri, int blokSayisi)
-        {
-            string[] basliklar = { "Bölüm", "Sınıf", "Saat", "Ders Adı", "A", "B", "C", "D" };
+            // Şablonda olmayan gün blokları (8. ve sonrası) — veri yazılmadan ÖNCE eklenir ki
+            // 1. bloğun ham şablon biçimi kopyalansın (zebra dolgusu taşınmasın).
+            for (int blok = sablonBlokSayisi; blok < blokSayisi; blok++)
+                BlokEkle(ws, blok, tarihSatiri, baslikSatiri, veriBitis);
 
             for (int blok = 0; blok < blokSayisi; blok++)
             {
                 int col = 1 + blok * BlokGenisligi;
-                for (int i = 0; i < basliklar.Length; i++)
+
+                if (blok >= gunler.Count)
                 {
-                    var h = ws.Cells[baslikSatiri, col + i];
-                    h.Value = basliklar[i];
-                    h.Style.Font.Bold = true;
-                    h.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                    h.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                    h.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(217, 225, 242));
-                    h.Style.Border.Top.Style = ExcelBorderStyle.Thin;
-                    h.Style.Border.Bottom.Style = ExcelBorderStyle.Medium;
-                    h.Style.Border.Left.Style = ExcelBorderStyle.Thin;
-                    h.Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                    // Kullanılmayan gün bloğu — tarih ve içerik temizlenir
+                    ws.Cells[tarihSatiri, col].Value = null;
+                    for (int r = veriBaslangic; r <= veriBitis; r++)
+                        for (int c = 0; c < BlokGenisligi; c++) ws.Cells[r, col + c].Value = null;
+                    continue;
                 }
+
+                DateTime gun = gunler[blok];
+                var saatler = (takvim.TryGetValue(gun, out var s) ? s : new List<string>())
+                    .OrderBy(SaatYardimci.Anahtar).ToList();
+
+                var tarihH = ws.Cells[tarihSatiri, col];
+                tarihH.Value = gun;
+                tarihH.Style.Numberformat.Format = "dd.mm.yyyy";
+                tarihH.Style.Font.Bold = true;
+                tarihH.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+
+                int r2 = veriBaslangic;
+                int saatIndex = 0;
+                foreach (var saat in saatler)
+                {
+                    int blokBas = r2; // bu saat grubunun ilk satırı
+                    foreach (var bolum in Bolumler)
+                    {
+                        ws.Cells[r2, col + 0].Value = bolum;   // Bölüm
+                        ws.Cells[r2, col + 1].Value = null;    // Sınıf
+                        ws.Cells[r2, col + 2].Value = saat;    // Saat
+                        for (int c = 3; c < BlokGenisligi; c++) ws.Cells[r2, col + c].Value = null;
+
+                        // Otomatik dağıtım hücresi doldur
+                        if (hucreler.TryGetValue(HucreAnahtar(bolum, gun, saat), out var icerik))
+                        {
+                            ws.Cells[r2, col + 1].Value = icerik.Sinif;      // Sınıf
+                            ws.Cells[r2, col + 3].Value = icerik.DersAdi;    // Ders Adı
+                            YazHarf(ws, r2, col + 4, icerik.Harfler, "A");
+                            YazHarf(ws, r2, col + 5, icerik.Harfler, "B");
+                            YazHarf(ws, r2, col + 6, icerik.Harfler, "C");
+                            YazHarf(ws, r2, col + 7, icerik.Harfler, SubeEtiketi.DordunculSube);
+                        }
+
+                        var rng = ws.Cells[r2, col, r2, col + BlokGenisligi - 1];
+                        rng.Style.Border.Top.Style = ExcelBorderStyle.Thin;
+                        rng.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
+                        rng.Style.Border.Left.Style = ExcelBorderStyle.Thin;
+                        rng.Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                        r2++;
+                    }
+
+                    // ── GÖRSEL SAAT AYRIMI ──
+                    // Her saat grubu (6 bölüm satırı) net biçimde ayrılır:
+                    //  • grubun üstü/altı KALIN çerçeve,
+                    //  • gruplar dönüşümlü açık zemin (zebra),
+                    //  • Saat kolonu kalın yazı + orta hizalı.
+                    var saatBlogu = ws.Cells[blokBas, col, r2 - 1, col + BlokGenisligi - 1];
+                    ws.Cells[blokBas, col, blokBas, col + BlokGenisligi - 1]
+                        .Style.Border.Top.Style = ExcelBorderStyle.Medium;
+                    ws.Cells[r2 - 1, col, r2 - 1, col + BlokGenisligi - 1]
+                        .Style.Border.Bottom.Style = ExcelBorderStyle.Medium;
+                    if (saatIndex % 2 == 1)
+                    {
+                        saatBlogu.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                        saatBlogu.Style.Fill.BackgroundColor.SetColor(
+                            System.Drawing.Color.FromArgb(235, 238, 245)); // açık gri-mavi
+                    }
+                    var saatKolonu = ws.Cells[blokBas, col + 2, r2 - 1, col + 2];
+                    saatKolonu.Style.Font.Bold = true;
+                    saatKolonu.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+
+                    saatIndex++;
+                }
+
+                // Bloktaki artık satırları temizle
+                for (; r2 <= veriBitis; r2++)
+                    for (int c = 0; c < BlokGenisligi; c++) ws.Cells[r2, col + c].Value = null;
             }
 
-            // Bant etiketi ("▼ n. HAFTA") artık yazılmaz — bantlar yalnızca
-            // tarih satırlarıyla ayrışır.
+            // Veri alanının altında şablondan kalmış satırları temizle
+            int temizSonKolon = Math.Max(sonKolon, blokSayisi * BlokGenisligi);
+            for (int r = veriBitis + 1; r <= ws.Dimension.End.Row; r++)
+                for (int c = 1; c <= temizSonKolon; c++) ws.Cells[r, c].Value = null;
+        }
+
+        /// <summary>
+        /// Şablon dosyasında hazır olmayan bir gün bloğunu (8. ve sonrası) 1. bloğun
+        /// biçimiyle oluşturur: sütun genişlikleri, hücre stilleri, kolon başlıkları ve
+        /// 8 sütuna birleştirilmiş tarih hücresi kopyalanır.
+        /// </summary>
+        private static void BlokEkle(ExcelWorksheet ws, int blok, int tarihSatiri, int baslikSatiri, int veriBitis)
+        {
+            int col = 1 + blok * BlokGenisligi;
+            for (int c = 0; c < BlokGenisligi; c++)
+            {
+                ws.Column(col + c).Width = ws.Column(1 + c).Width;
+                for (int r = tarihSatiri; r <= veriBitis; r++)
+                    ws.Cells[r, col + c].StyleID = ws.Cells[r, 1 + c].StyleID;
+                ws.Cells[baslikSatiri, col + c].Value = ws.Cells[baslikSatiri, 1 + c].Value;
+            }
+            ws.Cells[tarihSatiri, col, tarihSatiri, col + BlokGenisligi - 1].Merge = true;
         }
 
         // ═══════════════ 3) GÜN SAYFALARI (örnek salon sayfasını klonla) ═══════════════
