@@ -106,7 +106,7 @@ static class OturumKaydiTestleri
 
             Dogrula(Alan<Button>(form, "btnSalonAta").Enabled && Alan<Button>(form, "btnMatrisExport").Enabled,
                 "Açık adım butonları açık gelmedi.");
-            Dogrula(!Alan<Button>(form, "btnFinalExport").Enabled && !Alan<Button>(form, "btnSablonOlustur").Enabled,
+            Dogrula(!Alan<Button>(form, "btnFinalExport").Enabled && !Alan<Button>(form, "btnOtomatikDagit").Enabled,
                 "Kapalı adım butonları kapalı gelmedi.");
             Dogrula(Alan<TabControl>(form, "tabControlSonuc").SelectedIndex == 1, "Seçili sekme geri gelmedi.");
             Dogrula(Alan<Panel>(form, "panelSag").Visible, "Sonuç paneli açık gelmedi.");
@@ -212,12 +212,13 @@ static class OturumKaydiTestleri
             },
             Butonlar = new Dictionary<string, bool>
             {
-                ["btnSablonOlustur"] = false, ["btnOtomatikDagit"] = false, ["btnSalonAta"] = true,
+                ["btnOtomatikDagit"] = false, ["btnSalonAta"] = true,
                 ["btnSalonExport"] = true, ["btnGozetmenAta"] = true, ["btnMatrisExport"] = true,
                 ["btnGozetmenliYukle"] = false, ["btnFinalExport"] = false
             },
             SeciliSekme = 1,
-            SonucPaneliAcik = true
+            SonucPaneliAcik = true,
+            PencereTamEkran = true   // sonuç paneli yalnızca tam ekranda açılır
         };
     }
 

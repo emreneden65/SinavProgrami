@@ -17,7 +17,7 @@ namespace SinavProgrami
     {
         private readonly List<Ders> _dersListesi = new List<Ders>();
         private List<SinavAtama> _sonSonuclar = null;
-        // Salon atama sonucu (gün-sayfası matrisi) — 'Salonları Ata' üretir, 'Salon Atanmış Dosya Çıkart' kullanır.
+        // Salon atama sonucu (gün-sayfası matrisi) — 'Salonları Ata' üretir, 'Salonlu Excel Çıkart' kullanır.
         private List<GunlukSalonDagitici.GunSatir> _gunSalonSatirlari = null;
 
         // Kullanıcı tanımlı şube havuzları — seçilen şubeler salon atamasında tek salonda birleştirilir
@@ -33,8 +33,6 @@ namespace SinavProgrami
         // Aşama A'da oluşturulan (veya boş açılan) salonsuz takvim yerleşimi.
         // Grid düzenlemeleri bu listeyi günceller; SalonlariDagit bu listeyi okur.
         private List<SinavAtama> _sablonSonuclari = null;
-        // Kullanıcı şablon üzerinde elle değişiklik yaptı mı? (yeniden oluşturma onayı için)
-        private bool _sablonDuzenlendi = false;
         // Şablon düzenlemelerinde kural ihlallerini anında kontrol eden doğrulayıcı
         private SablonDogrulayici _sablonDogrulayici = null;
         // INT sütunundaki elle girilen notlar (grid yenilense de kaybolmasın)
@@ -64,6 +62,8 @@ namespace SinavProgrami
         // çıktılardaki hafta ayrımı bu seçime göre belirlenir.
         private SinavDonemTipi _sinavTipi = SinavDonemTipi.Vize;
         private ComboBox cmbSinavTipi;
+        private Label lblGunSayisi;
+        private NumericUpDown numGunSayisi;
         private DateTimePicker dtpSinavBaslangic;
         private Button btnTakvimDoldur;
         private Label lblSinavTipi;
@@ -115,50 +115,110 @@ namespace SinavProgrami
             // Tüm başlangıç mantığı form tamamen yüklendikten sonra çalışsın
             this.Shown += MainForm_Shown;
             this.FormClosing += MainForm_FormClosing;
-            this.Resize += PencereBoyutuDegisti;
         }
 
-        private FormWindowState _oncekiPencereDurumu = FormWindowState.Normal;
+        // ══════════════════════════════════════════════════════════════
+        //  SONUÇ PENCERESİ — sonuç paneli (Şablon / Sonuçlar / Matris) ana pencerede
+        //  sıkışmasın diye kendi, ayrı boyutlandırılabilir penceresinde açılır.
+        //  Pencere modsuzdur: açıkken ana ekran kullanılmaya devam eder ve tablolar
+        //  canlı güncellenir. Kapanınca panel ana forma (gizli) geri döner.
+        // ══════════════════════════════════════════════════════════════
+        private Form _sonucPenceresi;
 
-        /// <summary>Sonuç paneli kullanıcı değil tam ekrana geçiş tarafından mı açıldı?</summary>
-        private bool _panelTamEkrandaAcildi;
+        private void SonucPenceresiniAcKapat()
+        {
+            if (_sonucPenceresi != null) _sonucPenceresi.Close();
+            else SonucPenceresiniAc();
+        }
+
+        private void SonucPenceresiniAc()
+        {
+            if (_sonucPenceresi != null) { _sonucPenceresi.Activate(); return; }
+
+            var ekran = Screen.FromControl(this).WorkingArea;
+            var form = new Form
+            {
+                Text = "🖥 Sınav Programı Sonuçları",
+                Icon = Icon,
+                StartPosition = FormStartPosition.Manual,
+                Bounds = new Rectangle(ekran.Left + ekran.Width / 10, ekran.Top + ekran.Height / 10,
+                                       ekran.Width * 8 / 10, ekran.Height * 8 / 10),
+                WindowState = FormWindowState.Maximized,
+                FormBorderStyle = FormBorderStyle.Sizable,
+                MinimumSize = new Size(700, 450),
+                BackColor = panelSag.BackColor,
+                ShowInTaskbar = true   // sahipsiz: ana pencereyle arasında serbestçe geçilebilsin
+            };
+
+            Controls.Remove(panelSag);
+            panelSag.Dock = DockStyle.Fill;
+            panelSag.Visible = true;
+            form.Controls.Add(panelSag);
+
+            form.FormClosed += (s, e) =>
+            {
+                form.Controls.Remove(panelSag);
+                panelSag.Visible = false;
+                if (!IsDisposed && !Disposing) Controls.Add(panelSag);
+                _sonucPenceresi = null;
+                SonucPaneliDugmesiniGuncelle();
+            };
+
+            _sonucPenceresi = form;
+            form.Show();
+            SonucPaneliDugmesiniGuncelle();
+        }
+
+        private int _solAsilGenislik, _sagSutunSagBosluk;
+        /// <summary>Sağa yaslanan buton sütunu: sonuç paneli düğmesi + adım grupları.</summary>
+        private readonly List<Control> _sagSutun = new List<Control>();
 
         /// <summary>
-        /// Tam ekrana geçilince sonuç paneli kapalıysa açılır — sol panel sabit genişlikte
-        /// olduğundan aksi halde ekranın sağı boş kalırdı. Normal boyuta dönünce bu şekilde
-        /// açılan panel yine kapanır; kullanıcının açtığı panel için pencere genişletilir
-        /// (aksi halde panel sağda ince bir şerit olarak sıkışırdı).
+        /// Ölçüler form gösterildikten sonra (ekran ölçeklemesi uygulanmış haliyle) alınır:
+        /// sol panelin asıl genişliği ve buton sütununun sağ kenara uzaklığı.
         /// </summary>
-        private void PencereBoyutuDegisti(object sender, EventArgs e)
+        private void SolPaneliKur()
         {
-            var onceki = _oncekiPencereDurumu;
-            _oncekiPencereDurumu = WindowState;
-            if (btnSagToggle == null || WindowState == onceki) return;
-
-            if (WindowState == FormWindowState.Maximized && !panelSag.Visible)
-            {
-                btnSagToggle.PerformClick();
-                _panelTamEkrandaAcildi = true;
-            }
-            else if (WindowState == FormWindowState.Normal && onceki == FormWindowState.Maximized && panelSag.Visible)
-            {
-                if (_panelTamEkrandaAcildi) btnSagToggle.PerformClick();
-                else SonucPaneliIcinGenislet();
-            }
+            if (_sagSonGrup == null) return;
+            // Sağ boşluk sol kenar boşluğuyla aynı; panel açıkken sol panel içeriği kadar geniş
+            // (tasarımcı genişliği ekran ölçeklemesiyle büyüyüp sütunun sağında boşluk bırakıyordu)
+            _sagSutunSagBosluk = btnVeritabaniSifirla.Left;
+            _solAsilGenislik = Math.Min(panelSol.Width,
+                _sagSonGrup.Right + _sagSutunSagBosluk + (panelSol.Width - panelSol.ClientSize.Width));
+            this.Resize += (s, e) => SolPaneliYerlestir();
+            SolPaneliYerlestir();
         }
 
-        /// <summary>Sonuç paneli açıkken normal boyuttaki pencere dar kalmışsa (ekrana sığdığı kadar) genişletir.</summary>
-        private void SonucPaneliIcinGenislet()
+        /// <summary>
+        /// Sonuç paneli ayrı pencerede açıldığı için sol panel ana pencerenin tamamını kaplar ve
+        /// buton sütunu en sağa yaslanır. Alttaki Sıfırla / Temizle butonları sütunun sağ kenarına
+        /// kadar uzar.
+        /// </summary>
+        private void SolPaneliYerlestir()
         {
-            if (WindowState != FormWindowState.Normal || ClientSize.Width >= 1300) return;
-            int ekranaSigan = Screen.FromControl(this).WorkingArea.Width - (Width - ClientSize.Width);
-            ClientSize = new Size(Math.Min(1300, ekranaSigan), ClientSize.Height);
+            if (_solAsilGenislik == 0) return;
+            panelSol.Width = Math.Max(_solAsilGenislik, ClientSize.Width);
+
+            int sag = panelSol.ClientSize.Width - _sagSutunSagBosluk;
+            foreach (var c in _sagSutun)
+                c.Left = sag - c.Width;
+            btnVeritabaniSifirla.Width = sag - btnVeritabaniSifirla.Left;
+            btnTemizle.Width = sag - btnTemizle.Left;
+        }
+
+        /// <summary>Aç/kapat düğmesinin metni sonuç penceresinin durumunu gösterir.</summary>
+        private void SonucPaneliDugmesiniGuncelle()
+        {
+            if (btnSagToggle == null) return;
+            btnSagToggle.Text = _sonucPenceresi != null ? "🖥 Sonuç Penceresini Kapat" : "🖥 Sonuç Penceresini Aç";
         }
 
         private void MainForm_Shown(object sender, EventArgs e)
         {
             // İlk açılışta sadece bir kez çalışsın
             this.Shown -= MainForm_Shown;
+
+            SolPaneliKur();
 
             // Önceki oturum varsa kaldığı yerden devam; yoksa varsayılan takvim
             if (!OturumuGeriYukle())
@@ -179,7 +239,7 @@ namespace SinavProgrami
         /// <summary>Adım kilidi taşıyan butonlar — açık/kapalı durumları oturumla birlikte saklanır.</summary>
         private Button[] AdimButonlari => new[]
         {
-            btnSablonOlustur, btnOtomatikDagit, btnSalonAta, btnSalonExport,
+            btnOtomatikDagit, btnSalonAta, btnSalonExport,
             btnGozetmenAta, btnMatrisExport, btnGozetmenliYukle, btnFinalExport
         };
 
@@ -199,6 +259,7 @@ namespace SinavProgrami
                 if (grid.IsCurrentCellInEditMode) grid.EndEdit();
 
             OturumuKaydet(hataGoster: true);
+            _sonucPenceresi?.Close();   // sahipsiz pencere ana pencereyle birlikte kapanmaz; durumu kaydedildikten sonra kapatılır
         }
 
         /// <summary>Durum son kayıttan farklıysa diske yazar.</summary>
@@ -244,7 +305,7 @@ namespace SinavProgrami
             Gozetmenler = _gozetmenListesi.ToList(),
             Butonlar = AdimButonlari.ToDictionary(b => b.Name, b => b.Enabled),
             SeciliSekme = tabControlSonuc.SelectedIndex,
-            SonucPaneliAcik = panelSag.Visible,
+            SonucPaneliAcik = _sonucPenceresi != null,
             PencereTamEkran = WindowState == FormWindowState.Maximized,
             // Tam ekran / simge durumundayken normal boyut RestoreBounds'tadır
             PencereGenislik = (WindowState == FormWindowState.Normal ? Bounds : RestoreBounds).Width,
@@ -305,7 +366,7 @@ namespace SinavProgrami
                 GozetmenGridiniGuncelle();
 
                 if (cmbSinavTipi != null)
-                    cmbSinavTipi.SelectedIndex = _sinavTipi == SinavDonemTipi.Final ? 1 : 0;
+                    cmbSinavTipi.SelectedIndex = (int)_sinavTipi;
                 OgretimDoneminiGoster(d.OgretimYili, d.Yariyil);
                 if (dtpSinavBaslangic != null && d.BaslangicTarihi.HasValue)
                     dtpSinavBaslangic.Value = d.BaslangicTarihi.Value;
@@ -338,9 +399,9 @@ namespace SinavProgrami
                 if (d.PencereTamEkran)
                     WindowState = FormWindowState.Maximized;
 
-                if (btnSagToggle != null && panelSag.Visible != d.SonucPaneliAcik)
-                    btnSagToggle.PerformClick();
-                _panelTamEkrandaAcildi = false;   // geri yüklenen panel durumu kullanıcının tercihidir
+                // Kapatılırken sonuç penceresi açıksa yeniden açılır
+                if (btnSagToggle != null && d.SonucPaneliAcik)
+                    SonucPenceresiniAc();
 
                 _sonKaydedilenOturum = OturumKaydi.Serilestir(OturumDurumunuTopla());
 
@@ -414,7 +475,7 @@ namespace SinavProgrami
                 ("🎯 Hata Oranı (Bölüm Bazlı)", new Control[]{ lblHataOrani, dgvHataOrani }),
                 ("⏰ Sınav Takvimi ve Saat Ayarları", new Control[]{ separator, lblZamanBaslik,
                     lblOgretimYili, cmbOgretimYili, pnlYariyil,
-                    lblSinavTipi, cmbSinavTipi, dtpSinavBaslangic, btnTakvimDoldur,
+                    lblSinavTipi, cmbSinavTipi, dtpSinavBaslangic, lblGunSayisi, numGunSayisi, btnTakvimDoldur,
                     calendarSinav, chkGunEtkin, flowSaatler }),
                 ("🧑‍🏫 Gözetmenler Slotu", new Control[]{ lblGozetmenBaslik, btnGozetmenYukle,
                     btnGozetmenEkle, btnGozetmenSil, dgvGozetmenler }),
@@ -463,51 +524,48 @@ namespace SinavProgrami
                 panelSol.Controls.Add(hdr);
                 hdr.BringToFront();
 
-                // Bölümde grid varsa: başlığı kısalt + sağına ⤢ "ayrı büyük pencerede aç" butonu
+                // Her bölüm: başlığı kısalt + sağına ⤢ "ayrı pencerede aç" butonu
+                // (grid'li bölümde grid pencereyi doldurur; grid'siz bölüm olduğu gibi taşınır)
                 var grid = ctrls.OfType<DataGridView>().FirstOrDefault();
                 bol.Grid = grid;
-                if (grid != null)
+                hdr.Width = 470;
+                var pop = new Button
                 {
-                    hdr.Width = 470;
-                    var pop = new Button
-                    {
-                        Width = 34, Height = 32, Text = "⤢",
-                        FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(49, 50, 68),
-                        ForeColor = Color.FromArgb(137, 180, 250),
-                        Font = new Font("Segoe UI", 12F, FontStyle.Bold),
-                        Cursor = Cursors.Hand, UseVisualStyleBackColor = false, TabStop = false
-                    };
-                    pop.FlatAppearance.BorderSize = 1;
-                    pop.FlatAppearance.BorderColor = Color.FromArgb(69, 71, 90);
-                    var yerel = bol;
-                    pop.Click += (s, e) => SectionPopOut(yerel);
-                    bol.PopButton = pop;
-                    panelSol.Controls.Add(pop);
-                    pop.BringToFront();
-                }
+                    Width = 34, Height = 32, Text = "⤢",
+                    FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(49, 50, 68),
+                    ForeColor = Color.FromArgb(137, 180, 250),
+                    Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                    Cursor = Cursors.Hand, UseVisualStyleBackColor = false, TabStop = false
+                };
+                pop.FlatAppearance.BorderSize = 1;
+                pop.FlatAppearance.BorderColor = Color.FromArgb(69, 71, 90);
+                var yerel = bol;
+                pop.Click += (s, e) => SectionPopOut(yerel);
+                bol.PopButton = pop;
+                panelSol.Controls.Add(pop);
+                pop.BringToFront();
                 _akordeon.Add(bol);
             }
 
-            // Sağ (sonuç) panelini varsayılan gizle + aç/kapat düğmesi
+            // Sağ (sonuç) paneli ana pencerede gizli; düğmeyle ayrı pencerede açılır.
+            // Form zemini sol panelle aynı renk: sağda ayrı renkte boş şerit görünmesin.
+            BackColor = panelSol.BackColor;
             panelSag.Visible = false;
             btnSagToggle = new Button
             {
                 Left = 545, Top = 12, Width = 250, Height = 32,
-                Text = "🖥 Sonuç Panelini Aç / Kapat", TextAlign = ContentAlignment.MiddleCenter,
+                Text = "🖥 Sonuç Penceresini Aç", TextAlign = ContentAlignment.MiddleCenter,
                 FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(69, 71, 90),
                 ForeColor = Color.FromArgb(205, 214, 244),
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 Cursor = Cursors.Hand, UseVisualStyleBackColor = false
             };
             btnSagToggle.FlatAppearance.BorderSize = 0;
-            btnSagToggle.Click += (s, e) =>
-            {
-                _panelTamEkrandaAcildi = false;   // kullanıcı kendisi açtı / kapattı
-                panelSag.Visible = !panelSag.Visible;
-                if (panelSag.Visible) SonucPaneliIcinGenislet();
-            };
+            btnSagToggle.Click += (s, e) => SonucPenceresiniAcKapat();
             panelSol.Controls.Add(btnSagToggle);
             btnSagToggle.BringToFront();
+            _sagSutun.Add(btnSagToggle);
+            SonucPaneliDugmesiniGuncelle();
 
             SagSutunuGrupla();
 
@@ -523,7 +581,8 @@ namespace SinavProgrami
         // Pencere kapanınca tüm kontroller accordion paneline eski haliyle döner.
         private void SectionPopOut(AkBolum bol)
         {
-            if (_acikPopup != null || bol?.Grid == null) return;
+            if (_acikPopup != null || bol == null) return;
+            if (bol.Grid == null) { BolumuPencerede(bol); return; }
             var grid = bol.Grid;
 
             var hepsi = bol.Icerik.Controls.Cast<Control>().ToList();
@@ -581,6 +640,49 @@ namespace SinavProgrami
                 }
                 _acikPopup = null;
                 AkordeonYerlestir();
+            };
+
+            _acikPopup = form;
+            form.ShowDialog(this);
+        }
+
+        // ── Grid'siz bölüm (ör. Sınav Takvimi): içerik paneli olduğu gibi ayrı pencereye taşınır ──
+        private void BolumuPencerede(AkBolum bol)
+        {
+            var pnl = bol.Icerik;
+            var form = new Form
+            {
+                Text = "🔎 " + bol.Ad,
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.Sizable,
+                MaximizeBox = true,
+                MinimizeBox = false,
+                AutoScroll = true,
+                BackColor = pnl.BackColor,
+                ForeColor = Color.FromArgb(205, 214, 244),
+                ShowInTaskbar = false
+            };
+            // Bazı kontroller (ör. saat seçimleri) panelin dışına taşıyor: pencerede panel içeriği
+            // kadar büyütülür, kapanınca asıl boyutuna döner
+            var asilBoyut = pnl.Size;
+            var icerik = pnl.Controls.Cast<Control>().Where(c => c.Visible || !pnl.Visible).ToList();
+            if (icerik.Count > 0)
+                pnl.Size = new Size(Math.Max(pnl.Width, icerik.Max(c => c.Right) + 12),
+                                    Math.Max(pnl.Height, icerik.Max(c => c.Bottom) + 12));
+            form.ClientSize = new Size(pnl.Width + 24, pnl.Height + 24);
+
+            panelSol.Controls.Remove(pnl);
+            pnl.Location = new Point(12, 12);
+            pnl.Visible = true;
+            form.Controls.Add(pnl);
+
+            form.FormClosed += (s, e) =>
+            {
+                form.Controls.Remove(pnl);
+                pnl.Size = asilBoyut;
+                panelSol.Controls.Add(pnl);
+                _acikPopup = null;
+                AkordeonYerlestir();   // konum ve görünürlük akordeon durumuna göre geri gelir
             };
 
             _acikPopup = form;
@@ -684,7 +786,7 @@ namespace SinavProgrami
                 ("1 · SINAV LİSTESİ VE ŞABLON", Color.FromArgb(249, 226, 175), new[]
                 {
                     new[] { btnExcelImport },
-                    new[] { btnSablonOlustur, btnOtomatikDagit },
+                    new[] { btnOtomatikDagit },
                 }),
                 ("2 · SALON ATAMASI", Color.FromArgb(137, 180, 250), new[]
                 {
@@ -743,8 +845,72 @@ namespace SinavProgrami
                 panelSol.Controls.Add(grup);
                 grup.BringToFront();
                 _sagSonGrup = grup;
+                _sagSutun.Add(grup);
                 y = grup.Bottom + GrupArasi;
             }
+
+            // Kısa buton adlarının tam açıklaması — fare üzerine gelince görünür
+            var ipucu = new ToolTip { AutoPopDelay = 15000, InitialDelay = 400 };
+            foreach (var (b, aciklama) in new (Button, string)[]
+            {
+                (btnDerslikYukle, "Okulun derslik listesini (Excel) yükler. Bir kez yeterli."),
+                (btnExcelImport, "Fakülteden gelen ham sınav / ders listesi Excel'ini yükler."),
+                (btnOtomatikDagit, "Dersleri günlere/saatlere otomatik dağıtılmış şablon Excel'i oluşturur."),
+                (btnSablonYukle, "Düzenlediğin şablon Excel'ini salon ataması için geri yükler."),
+                (btnSalonAta, "Yüklenen şablondaki sınavlara derslikleri atar."),
+                (btnSalonExport, "Salon atanmış Excel dosyasını kaydeder — gerekirse elle düzeltebilirsin."),
+                (btnGozetmenDosyaYukle, "Salon atanmış (gerekirse düzeltilmiş) Excel'i gözetmen ataması için geri yükler."),
+                (btnGozetmenAta, "Yüklenen gözetmen listesinden salonlara gözetmen atar."),
+                (btnMatrisExport, "Gözetmenli taslak Excel'i kaydeder — kontrol edip elle düzeltebilirsin."),
+                (btnGozetmenliYukle, "Düzenlediğin gözetmenli taslak Excel'ini geri yükler."),
+                (btnFinalExport, "Nihai sınav programı Excel'ini oluşturur."),
+            })
+                if (b != null) ipucu.SetToolTip(b, aciklama);
+
+            AdimGorunumunuKur();
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  ADIM İLERLEMESİ — kilitli adım butonları soluk görünür, sıradaki adım
+        //  beyaz çerçeveyle vurgulanır. (Flat butonlar pasifken de aynı renkte
+        //  kaldığı için hangi adımın açık olduğu aksi halde anlaşılmıyordu.)
+        // ══════════════════════════════════════════════════════════════
+        private readonly Dictionary<Button, Color> _adimAsilRenk = new Dictionary<Button, Color>();
+
+        /// <summary>İş akışı sırasıyla kilitli adımlar; aynı satırdaki butonlar aynı adımdır.</summary>
+        private Button[][] AdimZinciri => new[]
+        {
+            new[] { btnOtomatikDagit }, new[] { btnSalonAta }, new[] { btnSalonExport },
+            new[] { btnGozetmenAta }, new[] { btnMatrisExport }, new[] { btnGozetmenliYukle }, new[] { btnFinalExport }
+        };
+
+        private void AdimGorunumunuKur()
+        {
+            foreach (var b in AdimButonlari.Append(btnExcelImport))
+            {
+                _adimAsilRenk[b] = b.BackColor;
+                b.FlatAppearance.BorderColor = Color.FromArgb(205, 214, 244);
+                b.EnabledChanged += (s, e) => AdimGorunumunuGuncelle();
+            }
+            AdimGorunumunuGuncelle();
+        }
+
+        private void AdimGorunumunuGuncelle()
+        {
+            var zemin = Color.FromArgb(40, 41, 60);
+            foreach (var kv in _adimAsilRenk)
+            {
+                var b = kv.Key; var asil = kv.Value;
+                // Pasif: asıl rengin %30'u zeminle karıştırılır → belirgin şekilde soluk
+                b.BackColor = b.Enabled ? asil : Color.FromArgb(
+                    (asil.R * 3 + zemin.R * 7) / 10, (asil.G * 3 + zemin.G * 7) / 10, (asil.B * 3 + zemin.B * 7) / 10);
+                b.FlatAppearance.BorderSize = 0;
+            }
+
+            // Sıradaki adım: zincirde açık olan en ileri adım; hiçbiri açık değilse sınav listesi yükleme
+            var siradaki = AdimZinciri.LastOrDefault(adim => adim.Any(b => b.Enabled)) ?? new[] { btnExcelImport };
+            foreach (var b in siradaki.Where(b => b.Enabled))
+                b.FlatAppearance.BorderSize = 2;
         }
 
         private void AkordeonYerlestir()
@@ -788,12 +954,11 @@ namespace SinavProgrami
             // Manuel ders ekleme kaldırıldı — ders girişi yalnızca Excel importu (btnExcelImport)
             btnDersSil.Click += BtnDersSil_Click;
             btnExcelImport.Click += BtnExcelImport_Click;          // ADIM 1: Ders Listesi Yükle
-            btnSablonOlustur.Click += BtnSablonOlustur_Click;      // ADIM 2: Şablon Excel Oluştur (boş)
             btnOtomatikDagit.Click += BtnOtomatikDagit_Click;      // ADIM 2+: Otomatik dağıtımlı şablon
-            btnSablonYukle.Click += BtnSablonYukle_Click;          // Salon Ataması İçin Dosya Yükle
+            btnSablonYukle.Click += BtnSablonYukle_Click;          // Şablonu Geri Yükle
             btnSalonAta.Click += BtnSalonAta_Click;                // Salonları Ata (sadece atama)
-            btnSalonExport.Click += BtnSalonExport_Click;          // Salon Atanmış Dosya Çıkart
-            btnGozetmenDosyaYukle.Click += BtnGozetmenDosyaYukle_Click; // Gözetmenler için Dosya Yükle
+            btnSalonExport.Click += BtnSalonExport_Click;          // Salonlu Excel Çıkart
+            btnGozetmenDosyaYukle.Click += BtnGozetmenDosyaYukle_Click; // Salonlu Excel Yükle
             btnTemizle.Click += BtnTemizle_Click;
             btnMatrisExport.Click += BtnMatrisExport_Click;
             btnGozetmenliYukle.Click += BtnGozetmenliYukle_Click;   // Adım 7: düzenlenmiş dosyayı geri yükle
@@ -811,14 +976,13 @@ namespace SinavProgrami
 
             // ── ADIM KİLİTLERİ (5 adımlı Excel gidiş-dönüş akışı) ──
             // 1 açık; 2 liste yüklenince; 3 her zaman (hazır doldurulmuş dosya için); 4 şablon geri yüklenince.
-            btnSablonOlustur.Enabled = false;   // Şablon Oluştur — Ders Listesi'nden sonra
             btnOtomatikDagit.Enabled = false;   // Otomatik Dağıt — Ders Listesi'nden sonra
-            btnSalonAta.Enabled = false;        // Salonları Ata — Salon Ataması İçin Dosya Yükle'den sonra
-            btnSalonExport.Enabled = false;     // Salon Atanmış Dosya Çıkart — Salonları Ata'dan sonra
-            btnGozetmenAta.Enabled = false;     // Gözetmen Ata — Gözetmenler için Dosya Yükle'den sonra
-            btnMatrisExport.Enabled = false;    // Gözetmenli Taslak Çıkart — Gözetmen Ata'dan sonra
-            btnGozetmenliYukle.Enabled = false; // Düzenlenmiş Dosyayı Yükle — Taslak Çıkart'tan sonra
-            btnFinalExport.Enabled = false;     // Final Programı Çıkart — Düzenlenmiş Dosyayı Yükle'den sonra
+            btnSalonAta.Enabled = false;        // Salonları Ata — Şablonu Geri Yükle'den sonra
+            btnSalonExport.Enabled = false;     // Salonlu Excel Çıkart — Salonları Ata'dan sonra
+            btnGozetmenAta.Enabled = false;     // Gözetmen Ata — Salonlu Excel Yükle'den sonra
+            btnMatrisExport.Enabled = false;    // Taslak Excel Çıkart — Gözetmen Ata'dan sonra
+            btnGozetmenliYukle.Enabled = false; // Taslağı Geri Yükle — Taslak Çıkart'tan sonra
+            btnFinalExport.Enabled = false;     // Final Programı Çıkart — Taslağı Geri Yükle'den sonra
 
             dgvDersler.CellEndEdit += DgvDersler_CellEndEdit;
             txtDersAra.TextChanged += (s, e) => DersGridiGuncelle();
@@ -848,13 +1012,26 @@ namespace SinavProgrami
             cmbFiltreBolum.SelectedIndexChanged += (s, e) => MatrisFiltreUygula();
             cmbFiltreSinif.SelectedIndexChanged += (s, e) => MatrisFiltreUygula();
 
+            // Çift tamponlama: tablolar kaydırılırken hücreler önce bellekte çizilip ekrana tek
+            // seferde basılır — tam ekranda yüzlerce hücre görünürken kasma ve titreme olmaz.
+            // Görünüm ve davranış değişmez.
+            foreach (var grid in new[] { dgvSablon, dgvSonuc, dgvMatris, dgvDersler, dgvOverbooking, dgvHataOrani, dgvGozetmenler })
+                CiftTamponla(grid);
+
             // ── Şablon grid olayları (Excel'den gelen matris üzerinde düzenleme) ──
             dgvSablon.CellValueChanged += DgvSablon_CellValueChanged;
             dgvSablon.CellEndEdit += DgvSablon_CellEndEdit;
             dgvSablon.DataError += (s, e) => e.ThrowException = false; // ComboBox değer uyuşmazlıklarını sessizce yut
             dgvSablon.CellPainting += DgvSablon_CellPainting;
             dgvSablon.Paint += DgvSablon_Paint;
-            dgvSablon.Scroll += (s, e) => dgvSablon.Invalidate();
+            // Gün bantları yalnızca başlık satırında: yatay kaydırmada YALNIZCA başlık şeridi
+            // yeniden çizilir (bütün tabloyu her kaydırma adımında baştan çizmek kasıyordu).
+            // Dikey kaydırma başlığı hareket ettirmez, yeniden çizim gerekmez.
+            dgvSablon.Scroll += (s, e) =>
+            {
+                if (e.ScrollOrientation == ScrollOrientation.HorizontalScroll)
+                    dgvSablon.Invalidate(new Rectangle(0, 0, dgvSablon.Width, dgvSablon.ColumnHeadersHeight + 1));
+            };
             dgvSablon.ColumnWidthChanged += (s, e) => dgvSablon.Invalidate();
             dgvSablon.Resize += (s, e) => dgvSablon.Invalidate();
 
@@ -1189,7 +1366,6 @@ namespace SinavProgrami
                     // Downstream durumu sıfırla (yeni liste → yeni şablon gerekecek)
                     _takvimSlotlari.Clear();
                     _sablonSonuclari = null;
-                    _sablonDuzenlendi = false;
                     _sablonIntNotlari.Clear();
                     _sonSonuclar = null;
 
@@ -1198,7 +1374,6 @@ namespace SinavProgrami
                     HataOraniGridiniGuncelle();
 
                     // Adım kilitleri: 2 ve 2+ açılır; 4/5 kapalı
-                    btnSablonOlustur.Enabled = true;
                     btnOtomatikDagit.Enabled = true;
                     btnSalonAta.Enabled = false;
                     btnGozetmenAta.Enabled = false;
@@ -1221,88 +1396,6 @@ namespace SinavProgrami
             {
                 MessageBox.Show($"Ders listesi yükleme hatası:\n\n{ex.Message}", "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 lblDurum.Text = "❌ Ders listesi yüklemesi başarısız!";
-                lblDurum.ForeColor = Color.FromArgb(243, 139, 168);
-            }
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        //  ADIM 2 — ŞABLON EXCEL OLUŞTUR
-        //  Yüklenen ders havuzunu "örnek dağıtım" formatındaki bir .xlsx'e yazar;
-        //  "Çekilmiş Dersler" sayfası kod-ilk-rakamı gruplarına göre doldurulur.
-        //  Kullanıcı bu dosyayı indirip "Sınav Haftası Dağıtım Şablonu"nu elle doldurur.
-        // ─────────────────────────────────────────────────────────────
-        private void BtnSablonOlustur_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                if (_dersListesi.Count == 0)
-                {
-                    MessageBox.Show("Önce '1) Ders Listesi Yükle' ile ders listesini yükleyin!",
-                        "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                if (_takvimSlotlari.Count == 0)
-                {
-                    MessageBox.Show("Takvimde hiç sınav günü seçili değil!\n" +
-                        "Sağdaki 'Sınav Takvimi' panelinden en az bir gün seçin.",
-                        "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                // Gün sayfalarının salon sütunları derslik listesinden kurulur
-                if (!DersliklerYukluMu()) return;
-                if (!OgretimDonemiSecildiMi()) return;
-
-                using (var dlg = new SaveFileDialog())
-                {
-                    dlg.Filter = "Excel Dosyası (*.xlsx)|*.xlsx";
-                    dlg.Title = "Çekilmiş Dersler Şablonunu Kaydet";
-                    dlg.FileName = $"Cekilmis_Dersler_Dagitim_{DateTime.Now:yyyyMMdd}.xlsx";
-
-                    if (dlg.ShowDialog() != DialogResult.OK) return;
-
-                    lblDurum.Text = "⏳ Şablon Excel'i oluşturuluyor...";
-                    lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
-                    Application.DoEvents();
-
-                    CekilmisDerslerExportHelper.Olustur(_dersListesi, _takvimSlotlari, dlg.FileName, out var uyarilar, derslikler: _derslikler);
-
-                    lblDurum.Text = "✅ Şablon oluşturuldu. İndirip 'Sınav Haftası Dağıtım Şablonu'nu doldurun.";
-                    lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
-
-                    string mesaj = "Şablon Excel'i oluşturuldu:\n\n" + dlg.FileName +
-                        $"\n\n• 'Çekilmiş Dersler': kod grupları 0–4 + altında 'Ortak Dersler' listesi.\n" +
-                        $"• 'Sınav Haftası Dağıtım Şablonu': {_takvimSlotlari.Count} sınav günü tarihleriyle hazırlandı.\n" +
-                        $"• Her seçilen gün için ayrı 'Sınav Günü' sayfası oluşturuldu.\n" +
-                        "• Sınavları şablona elle yerleştirip '3) Şablonu Yükle' ile geri yükleyin.";
-                    if (uyarilar != null && uyarilar.Count > 0)
-                        mesaj += $"\n\n⚠ {uyarilar.Count} ders kapsam dışı bırakıldı (detay için not raporu).";
-
-                    mesaj += "\n\nDosya şimdi açılsın mı?";
-
-                    if (MessageBox.Show(mesaj, "Şablon Oluşturuldu",
-                        MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
-                    {
-                        try
-                        {
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = dlg.FileName,
-                                UseShellExecute = true
-                            });
-                        }
-                        catch { /* açma başarısız olursa sessiz geç */ }
-                    }
-
-                    if (uyarilar != null && uyarilar.Count > 0)
-                        AtlananSatirlariGoster(uyarilar);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Şablon oluşturma hatası:\n\n{ex.Message}", "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                lblDurum.Text = "❌ Şablon oluşturulamadı!";
                 lblDurum.ForeColor = Color.FromArgb(243, 139, 168);
             }
         }
@@ -1467,12 +1560,11 @@ namespace SinavProgrami
                     foreach (var kvp in okuma.Takvim)
                         _takvimSlotlari[kvp.Key] = new List<string>(kvp.Value);
 
-                    // Yüklenen takvimin gün sayısına göre sınav dönemi tipini senkronla
-                    // (7+ gün → Final). Arayüzdeki seçim de buna göre güncellenir.
-                    SinavTipiniTakvimdenSenkronla();
+                    // Sınav türü gün sayısından tahmin edilmez (10 günlük vize Final sayılmasın);
+                    // kullanıcının seçimi korunur.
+                    SinavTipiDurumunuYaz();
 
                     _sablonSonuclari = okuma.Sablon;
-                    _sablonDuzenlendi = false;
                     _sablonIntNotlari.Clear();
 
                     DersGridiGuncelle();
@@ -1980,7 +2072,7 @@ namespace SinavProgrami
                 lblDurum.Text = $"⏳ Salon dağıtımı yapılıyor (ortak önce, ELM+MEK → T4)..."; Application.DoEvents();
 
                 // ── Günlük salon dağıtımı: ortak önce, ELM+MEK T4 önceliği, uygulamalı ayrı, kapasiteye göre ──
-                // (SADECE atama yapılır; Excel çıktısı 'Salon Atanmış Dosya Çıkart' ile alınır.)
+                // (SADECE atama yapılır; Excel çıktısı 'Salonlu Excel Çıkart' ile alınır.)
                 // Şablon Excel'inde hoca kolonu yoktur — Öğretim Elemanı bilgisi
                 // sınav listesinden (ders+bölüm+şube eşleşmesiyle) tamamlanır.
                 OgretimElemanlariniDoldur(_sablonSonuclari);
@@ -1999,7 +2091,7 @@ namespace SinavProgrami
                 _sonSonuclar = GunlukSalonDagitici.SinavAtamalarinaCevir(gunSatirlari, salonlar);
                 try { SonuclariGoster(_sonSonuclar); MatrisGorunumuOlustur(_sonSonuclar, salonlar); } catch { /* görünüm opsiyonel */ }
 
-                // Buton durumu: salon atandı → 'Salon Atanmış Dosya Çıkart' aktif
+                // Buton durumu: salon atandı → 'Salonlu Excel Çıkart' aktif
                 btnSalonExport.Enabled = true;
                 // Yeni salon dağılımı → önceki gözetmenli taslak/düzenleme geçersiz
                 btnGozetmenliYukle.Enabled = false; btnFinalExport.Enabled = false;
@@ -2007,13 +2099,13 @@ namespace SinavProgrami
                 int gunSayisi = gunSatirlari.Select(s => s.Gun).Distinct().Count();
                 if (dagitici.Uyarilar.Count > 0)
                 {
-                    lblDurum.Text = $"⚠ {gunSayisi} gün / {gunSatirlari.Count} ders salona atandı, {dagitici.Uyarilar.Count} uyarı! 'Salon Atanmış Dosya Çıkart'a basın.";
+                    lblDurum.Text = $"⚠ {gunSayisi} gün / {gunSatirlari.Count} ders salona atandı, {dagitici.Uyarilar.Count} uyarı! 'Salonlu Excel Çıkart'a basın.";
                     lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
                     AtlananSatirlariGoster(dagitici.Uyarilar);
                 }
                 else
                 {
-                    lblDurum.Text = $"✅ Salon ataması tamam: {gunSayisi} gün, {gunSatirlari.Count} ders. Şimdi 'Salon Atanmış Dosya Çıkart'a basın.";
+                    lblDurum.Text = $"✅ Salon ataması tamam: {gunSayisi} gün, {gunSatirlari.Count} ders. Şimdi 'Salonlu Excel Çıkart'a basın.";
                     lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
                 }
             }
@@ -2051,7 +2143,7 @@ namespace SinavProgrami
 
                     GunSalonMatrisExportHelper.YazVeKaydet(_gunSalonSatirlari, _derslikler, _sablonSonuclari, _takvimSlotlari, dlg.FileName);
 
-                    lblDurum.Text = "✅ Salon atanmış dosya oluşturuldu. Gerekirse elle düzenleyip 'Gözetmenler için Dosya Yükle' ile verin.";
+                    lblDurum.Text = "✅ Salon atanmış dosya oluşturuldu. Gerekirse elle düzenleyip 'Salonlu Excel Yükle' ile verin.";
                     lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
 
                     if (MessageBox.Show("Salon atanmış dosya oluşturuldu:\n\n" + dlg.FileName +
@@ -2428,16 +2520,44 @@ namespace SinavProgrami
         /// Sütun başlığı hücrelerini alt bölgeye çizer — üst bant, Paint olayında
         /// çizilen birleşik gün başlıklarına ayrılır.
         /// </summary>
+        /// <summary>DataGridView'in korumalı DoubleBuffered özelliğini açar (yalnızca çizim yöntemi değişir).</summary>
+        private static void CiftTamponla(DataGridView grid)
+        {
+            if (grid == null) return;
+            typeof(Control).GetProperty("DoubleBuffered",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?.SetValue(grid, true);
+        }
+
+        // Şablon başlığı çizim nesneleri — her hücre çiziminde yeniden oluşturulmaz.
+        // Yazı tipi mevcut ölçeğe (Ctrl + tekerlek zoom) bağlıdır; ölçek değişince yenilenir.
+        private static readonly SolidBrush SablonBaslikFircasi = new SolidBrush(Color.FromArgb(69, 71, 90));
+        private static readonly Pen SablonBaslikCizgisi = new Pen(Color.FromArgb(49, 50, 68));
+        private static readonly SolidBrush SablonBantFircasi = new SolidBrush(Color.FromArgb(137, 180, 250));
+        private static readonly Pen SablonBantAyraci = new Pen(Color.FromArgb(30, 30, 46), 2);
+        private Font _sablonBaslikFontu;
+
+        private Font SablonBaslikFontu
+        {
+            get
+            {
+                if (_sablonBaslikFontu == null || Math.Abs(_sablonBaslikFontu.Size - SablonBaslikFontBoyutu) > 0.01F)
+                {
+                    _sablonBaslikFontu?.Dispose();
+                    _sablonBaslikFontu = new Font("Segoe UI", SablonBaslikFontBoyutu, FontStyle.Bold);
+                }
+                return _sablonBaslikFontu;
+            }
+        }
+
         private void DgvSablon_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
         {
             if (e.RowIndex != -1 || e.ColumnIndex < 0) return;
 
-            using (var arkaFirca = new SolidBrush(Color.FromArgb(69, 71, 90)))
-            using (var cizgiKalem = new Pen(Color.FromArgb(49, 50, 68)))
-            using (var baslikFont = new Font("Segoe UI", SablonBaslikFontBoyutu, FontStyle.Bold))
             {
-                e.Graphics.FillRectangle(arkaFirca, e.CellBounds);
-                e.Graphics.DrawLine(cizgiKalem, e.CellBounds.Right - 1, e.CellBounds.Top, e.CellBounds.Right - 1, e.CellBounds.Bottom);
+                var baslikFont = SablonBaslikFontu;
+                e.Graphics.FillRectangle(SablonBaslikFircasi, e.CellBounds);
+                e.Graphics.DrawLine(SablonBaslikCizgisi, e.CellBounds.Right - 1, e.CellBounds.Top, e.CellBounds.Right - 1, e.CellBounds.Bottom);
 
                 var col = dgvSablon.Columns[e.ColumnIndex];
                 bool gunSutunu = col.Name.StartsWith("g");
@@ -2461,9 +2581,9 @@ namespace SinavProgrami
         {
             if (dgvSablon.Columns.Count == 0 || _sablonGunler == null) return;
 
-            using var bantFirca = new SolidBrush(Color.FromArgb(137, 180, 250));
-            using var bantFont = new Font("Segoe UI", SablonBaslikFontBoyutu, FontStyle.Bold);
-            using var ayracKalem = new Pen(Color.FromArgb(30, 30, 46), 2);
+            var bantFirca = SablonBantFircasi;
+            var bantFont = SablonBaslikFontu;
+            var ayracKalem = SablonBantAyraci;
 
             // Donmuş "Saat" sütununun sağ kenarı — gün bantları bu sınırın soluna taşamaz
             // (yatay kaydırmada bandın donmuş sütun üzerine çizilip tabloyu bozmasını önler)
@@ -2566,7 +2686,6 @@ namespace SinavProgrami
             if (cikarilacaklar.Count == 0) return;
 
             _sablonSonuclari.RemoveAll(a => cikarilacaklar.Contains(a));
-            _sablonDuzenlendi = true;
             SablonYenile();
             e.Handled = true;
 
@@ -2720,7 +2839,6 @@ namespace SinavProgrami
                 if (eskiGrup == null || eskiGrup.Count == 0) return;
                 string cikarilan = eskiGrup[0].DersAdi;
                 _sablonSonuclari.RemoveAll(a => eskiGrup.Contains(a));
-                _sablonDuzenlendi = true;
                 SablonYenile();
                 lblDurum.Text = $"🗑 '{cikarilan}' şablondan çıkarıldı.";
                 lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
@@ -2789,7 +2907,6 @@ namespace SinavProgrami
                 lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
             }
 
-            _sablonDuzenlendi = true;
             SablonYenile();
         }
 
@@ -2859,7 +2976,6 @@ namespace SinavProgrami
                 DersGridiGuncelle();
             }
 
-            _sablonDuzenlendi = true;
             SablonYenile();
             lblDurum.Text = $"✏ '{atama.DersAdi}' (Şube {atama.Sube}) kontenjanı {yeniKontenjan} olarak güncellendi.";
             lblDurum.ForeColor = Color.FromArgb(249, 226, 175);
@@ -3415,7 +3531,7 @@ namespace SinavProgrami
                     // Gözetmen listesi de gönderilir — Görev Çizelgesi sayfasında bölüm eşleştirmesi için
                     ExcelMatrisExportHelper.MatrisExcelOlustur(_sonSonuclar, salonlar, dlg.FileName, ProgramBasligi(), _gozetmenListesi);
 
-                    lblDurum.Text = taslak ? "✅ Gözetmenli taslak kaydedildi — düzenleyip 'Düzenlenmiş Dosyayı Yükle'ye basın."
+                    lblDurum.Text = taslak ? "✅ Gözetmenli taslak kaydedildi — düzenleyip 'Taslağı Geri Yükle'ye basın."
                                            : "✅ Final sınav programı kaydedildi!";
                     lblDurum.ForeColor = Color.FromArgb(166, 227, 161);
 
@@ -3424,7 +3540,7 @@ namespace SinavProgrami
                     string ipucu = taslak
                         ? $"\n\nDüzenlemeleri '{GozetmenliSablonOkuyucu.SayfaAdi}' sayfasında yapın " +
                           "(salon hücresi: 1. satır öğrenci sayısı, 2. satır gözetmen adı), " +
-                          "sonra 'Düzenlenmiş Dosyayı Yükle' ile geri yükleyin."
+                          "sonra 'Taslağı Geri Yükle' ile geri yükleyin."
                         : "";
                     MessageBox.Show($"Sınav programı başarıyla dışa aktarıldı:\n\n📁 {dlg.FileName}{ipucu}",
                         "Dışa Aktarma Başarılı", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -3516,10 +3632,9 @@ namespace SinavProgrami
                 dgvMatris.Columns.Clear(); dgvMatris.Rows.Clear();
 
                 // Şablon durumu da temizlenir (aşamalı akış başa döner)
-                _sablonSonuclari = null; _sablonDuzenlendi = false; _sablonDogrulayici = null;
+                _sablonSonuclari = null; _sablonDogrulayici = null;
                 _sablonIntNotlari.Clear();
                 dgvSablon.Columns.Clear(); dgvSablon.Rows.Clear();
-                btnSablonOlustur.Enabled = false; btnOtomatikDagit.Enabled = false; btnSalonAta.Enabled = false; btnSalonExport.Enabled = false; btnGozetmenAta.Enabled = false; btnMatrisExport.Enabled = false; btnGozetmenliYukle.Enabled = false; btnFinalExport.Enabled = false;
 
                 cmbDersAdi.Text = ""; cmbDersAdi.Items.Clear(); BolumSecimleriniTemizle(); txtSube.Text = "A"; txtDersAra.Text = "";
                 numSinifSeviyesi.Value = 1; numOgrenciSayisi.Value = 50;
@@ -3571,10 +3686,9 @@ namespace SinavProgrami
                 dgvMatris.Columns.Clear(); dgvMatris.Rows.Clear();
 
                 // Şablon durumu da sıfırlanır (aşamalı akış başa döner)
-                _sablonSonuclari = null; _sablonDuzenlendi = false; _sablonDogrulayici = null;
+                _sablonSonuclari = null; _sablonDogrulayici = null;
                 _sablonIntNotlari.Clear();
                 dgvSablon.Columns.Clear(); dgvSablon.Rows.Clear();
-                btnSablonOlustur.Enabled = false; btnOtomatikDagit.Enabled = false; btnSalonAta.Enabled = false; btnSalonExport.Enabled = false; btnGozetmenAta.Enabled = false; btnMatrisExport.Enabled = false; btnGozetmenliYukle.Enabled = false; btnFinalExport.Enabled = false;
 
                 cmbDersAdi.Text = ""; cmbDersAdi.Items.Clear();
                 BolumSecimleriniTemizle();
@@ -4332,7 +4446,7 @@ namespace SinavProgrami
             {
                 if (_sonSonuclar == null || _sonSonuclar.Count == 0)
                 {
-                    MessageBox.Show("Önce 'Gözetmenler için Dosya Yükle' (veya 'Salonları Ata') ile salon atamalarını yükleyin!", "Uyarı",
+                    MessageBox.Show("Önce 'Salonlu Excel Yükle' (veya 'Salonları Ata') ile salon atamalarını yükleyin!", "Uyarı",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -4371,7 +4485,7 @@ namespace SinavProgrami
                 GozetmenGridiniGuncelle();
                 SonuclariGoster(_sonSonuclar);
 
-                // Gözetmen atandı → 'Gözetmenli Taslak Çıkart' aktif.
+                // Gözetmen atandı → 'Taslak Excel Çıkart' aktif.
                 // Yeniden atama, daha önce yüklenmiş düzenlenmiş dosyayı geçersiz kılar.
                 btnMatrisExport.Enabled = true;
                 btnGozetmenliYukle.Enabled = false;
@@ -4466,17 +4580,40 @@ namespace SinavProgrami
             dtpSinavBaslangic = new DateTimePicker
             {
                 Location = new Point(16, satir2),
-                Size = new Size(180, satirYuksekligi),
+                Size = new Size(130, satirYuksekligi),
                 Format = DateTimePickerFormat.Short,
                 Value = DateTime.Today.AddDays(1),
                 Font = new Font("Segoe UI", 9.5F)
             };
 
+            // Gün sayısı serbest: tip seçilince varsayılanı (Vize 7 / Final 10) yazılır, değiştirilebilir
+            lblGunSayisi = new Label
+            {
+                Text = "Gün:",
+                Location = new Point(154, satir2 + 4),
+                AutoSize = true,
+                ForeColor = Color.FromArgb(249, 226, 175),
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                BackColor = Color.Transparent
+            };
+            numGunSayisi = new NumericUpDown
+            {
+                Location = new Point(lblGunSayisi.Left + lblGunSayisi.PreferredWidth + 4, satir2),
+                Size = new Size(56, satirYuksekligi),
+                Minimum = 1,
+                Maximum = SinavTipi.EnFazlaGunSayisi,
+                Value = SinavTipi.VarsayilanGunSayisi(_sinavTipi),
+                BackColor = arkaplan,
+                ForeColor = yaziRengi,
+                Font = new Font("Segoe UI", 9.5F)
+            };
+            new ToolTip().SetToolTip(numGunSayisi, "Takvimi Doldur kaç sınav günü işaretlesin (Vize'de hafta sonu dahil, Final'de iş günü)");
+
             btnTakvimDoldur = new Button
             {
                 Text = "📅 Takvimi Doldur",
-                Location = new Point(204, satir2),
-                Size = new Size(156, satirYuksekligi),
+                Location = new Point(numGunSayisi.Right + 8, satir2),
+                Size = new Size(150, satirYuksekligi),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.FromArgb(137, 180, 250),
                 ForeColor = Color.FromArgb(30, 30, 46),
@@ -4493,6 +4630,8 @@ namespace SinavProgrami
             panelSol.Controls.Add(lblSinavTipi);
             panelSol.Controls.Add(cmbSinavTipi);
             panelSol.Controls.Add(dtpSinavBaslangic);
+            panelSol.Controls.Add(lblGunSayisi);
+            panelSol.Controls.Add(numGunSayisi);
             panelSol.Controls.Add(btnTakvimDoldur);
         }
 
@@ -4560,8 +4699,11 @@ namespace SinavProgrami
                 Text = "Dönem:", Location = new Point(0, 4), AutoSize = true,
                 ForeColor = Color.FromArgb(249, 226, 175), Font = new Font("Segoe UI", 9.5F, FontStyle.Bold)
             };
-            rbGuz = new RadioButton { Text = "Güz", Location = new Point(62, 3), AutoSize = true, ForeColor = yaziRengi, Font = new Font("Segoe UI", 9.5F) };
-            rbBahar = new RadioButton { Text = "Bahar", Location = new Point(128, 3), AutoSize = true, ForeColor = yaziRengi, Font = new Font("Segoe UI", 9.5F) };
+            // Konumlar yazı genişliğinden hesaplanır — sabit konumda kalın "Dönem:" yazısı Güz'ün üstüne biniyordu
+            rbGuz = new RadioButton { Text = "Güz", AutoSize = true, ForeColor = yaziRengi, Font = new Font("Segoe UI", 9.5F) };
+            rbGuz.Location = new Point(lblDonem.PreferredWidth + 8, 3);
+            rbBahar = new RadioButton { Text = "Bahar", AutoSize = true, ForeColor = yaziRengi, Font = new Font("Segoe UI", 9.5F) };
+            rbBahar.Location = new Point(rbGuz.Left + rbGuz.PreferredSize.Width + 14, 3);
             rbGuz.CheckedChanged += (s, e) => YariyilSeciminiOku();
             rbBahar.CheckedChanged += (s, e) => YariyilSeciminiOku();
             pnlYariyil.Controls.AddRange(new Control[] { lblDonem, rbGuz, rbBahar });
@@ -4617,48 +4759,36 @@ namespace SinavProgrami
         private string ProgramBasligi()
             => AkademikDonem.ProgramBasligi(_ogretimYili.Value, _yariyil.Value, _sinavTipi);
 
-        /// <summary>
-        /// Excel'den yüklenen takvimin gün sayısına bakarak sınav dönemi tipini günceller
-        /// ve arayüzdeki seçimi sessizce senkronlar (7+ gün → Final).
-        /// </summary>
-        private void SinavTipiniTakvimdenSenkronla()
-        {
-            _sinavTipi = SinavTipi.TahminEt(_takvimSlotlari.Keys);
-            if (cmbSinavTipi != null)
-            {
-                bool eski = _isUpdating;
-                _isUpdating = true;
-                try { cmbSinavTipi.SelectedIndex = _sinavTipi == SinavDonemTipi.Final ? 1 : 0; }
-                finally { _isUpdating = eski; }
-            }
-        }
-
         private void CmbSinavTipi_SelectedIndexChanged(object sender, EventArgs e)
         {
-            _sinavTipi = cmbSinavTipi.SelectedIndex == 1 ? SinavDonemTipi.Final : SinavDonemTipi.Vize;
+            _sinavTipi = (SinavDonemTipi)Math.Max(0, cmbSinavTipi.SelectedIndex);   // liste sırası = enum değeri
+            // Tip değişince gün sayısı kutusuna o tipin varsayılanı önerilir (değiştirilebilir)
+            if (numGunSayisi != null)
+                numGunSayisi.Value = SinavTipi.VarsayilanGunSayisi(_sinavTipi);
             SinavTipiDurumunuYaz();
         }
 
+        /// <summary>Seçili tip ve takvimdeki gün sayısı — gün sayısı serbest olduğu için hedef/uyarı yok.</summary>
         private void SinavTipiDurumunuYaz()
         {
-            int hedef = SinavTipi.VarsayilanGunSayisi(_sinavTipi);
             int mevcut = _takvimSlotlari.Count;
-            string uyari = mevcut == hedef ? "" : $"  ⚠ takvimde {mevcut} gün seçili";
-            lblDurum.Text = $"🗓 {SinavTipi.Ad(_sinavTipi)} — hedef {hedef} sınav günü.{uyari}";
-            lblDurum.ForeColor = mevcut == hedef
-                ? Color.FromArgb(166, 227, 161)
-                : Color.FromArgb(249, 226, 175);
+            lblDurum.Text = mevcut == 0
+                ? $"🗓 {SinavTipi.Ad(_sinavTipi)} — takvimde henüz sınav günü seçilmedi."
+                : $"🗓 {SinavTipi.Ad(_sinavTipi)} — takvimde {mevcut} sınav günü seçili.";
+            lblDurum.ForeColor = mevcut == 0
+                ? Color.FromArgb(249, 226, 175)
+                : Color.FromArgb(166, 227, 161);
         }
 
         private void BtnTakvimDoldur_Click(object sender, EventArgs e)
         {
-            int gunSayisi = SinavTipi.VarsayilanGunSayisi(_sinavTipi);
-            var gunler = SinavTipi.GunleriUret(dtpSinavBaslangic.Value.Date, _sinavTipi);
+            int gunSayisi = (int)numGunSayisi.Value;
+            var gunler = SinavTipi.GunleriUret(dtpSinavBaslangic.Value.Date, _sinavTipi, gunSayisi);
             if (gunler.Count == 0) return;
 
-            string kural = _sinavTipi == SinavDonemTipi.Final
-                ? "2 hafta × Pazartesi–Cuma — HAFTA SONLARI BOŞ"
-                : "Pazartesi–Pazar — tüm hafta sınav günü";
+            string kural = !SinavTipi.CumartesiSinavGunuMu(_sinavTipi)
+                ? "Pazartesi–Cuma — HAFTA SONLARI BOŞ"
+                : "hafta sonları dahil her gün sınav günü";
 
             // Haftalara göre özet: "1. Hafta: 20.07–24.07"
             var haftaOzet = gunler
@@ -4760,15 +4890,14 @@ namespace SinavProgrami
             DateTime seciliTarih = calendarSinav.SelectionStart.Date;
             if (chkGunEtkin.Checked)
             {
-                // FİNAL DÖNEMİ: hafta sonları boş bırakılır — elle işaretlemede uyar
+                // FİNAL: hafta sonları boş bırakılır — elle işaretlemede uyar
                 bool haftaSonu = seciliTarih.DayOfWeek == DayOfWeek.Saturday
                               || seciliTarih.DayOfWeek == DayOfWeek.Sunday;
-                if (haftaSonu && _sinavTipi == SinavDonemTipi.Final)
+                if (haftaSonu && !SinavTipi.CumartesiSinavGunuMu(_sinavTipi))
                 {
                     var onay = MessageBox.Show(
                         $"{seciliTarih:dd.MM.yyyy} bir hafta sonu günü.\n\n" +
-                        "Final programında hafta sonları boş bırakılır " +
-                        "(2 hafta × Pazartesi–Cuma = 10 sınav günü).\n\n" +
+                        $"{SinavTipi.Ad(_sinavTipi)}nda hafta sonları normalde boş bırakılır.\n\n" +
                         "Yine de sınav günü yapılsın mı?",
                         "Hafta Sonu Uyarısı", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                     if (onay != DialogResult.Yes)

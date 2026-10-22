@@ -95,25 +95,29 @@ Butonlar yukarıdan aşağıya sırayla kullanılır:
 
 0. **Derslik Listesi Yükle** — okulun derslik Excel'i (bir kez yeterli, bkz. Bölüm 4)
 1. **Sınav Listesi Yükle** — fakülteden gelen ham ders listesi Excel'i
-2. **Şablon Oluştur** — dersleri günlere/saatlere dağıtan şablon Excel'i üretir
-   *(Şablon Oluştur (Boş) = dağıtımı sen elle yapacaksan)*
+2. **Otomatik Şablon** — dersleri günlere/saatlere dağıtan şablon Excel'i üretir
 3. Şablon Excel'ini aç, gerekiyorsa elle düzelt, kaydet
-4. **Salon Ataması İçin Dosya Yükle** — az önce düzenlediğin şablonu geri yükle
-5. **Salonları Ata** → **Salon Atanmış Dosya Çıkart**
+4. **Şablonu Geri Yükle** — az önce düzenlediğin şablonu geri yükle
+5. **Salonları Ata** → **Salonlu Excel Çıkart**
 6. Çıkan dosyayı kontrol et, gerekiyorsa düzelt
 7. **Gözetmen Yükle (Excel)** — araştırma görevlisi listesi
-8. **Gözetmenler için Dosya Yükle** — salon atanmış dosyayı geri yükle
+8. **Salonlu Excel Yükle** — salon atanmış dosyayı geri yükle
 9. **Gözetmen Ata** → **Genel Dosya Çıkart** (nihai çıktı)
 
 ### Sınav dönemi tipi
 
-| Tip | Süre | Günler |
+| Tip | Varsayılan gün | Hafta sonu |
 |---|---|---|
-| **Vize** | 1 hafta | **7 gün — Pazartesi–Pazar** (tüm hafta sınav günü) |
-| **Final** | 2 hafta | 10 gün — 2 × (Pazartesi–Cuma), hafta sonları boş |
+| **Vize** | 7 | Sınav günü sayılır (her gün) |
+| **Final** | 10 | Boş bırakılır (yalnızca Pazartesi–Cuma) |
+| **Bütünleme** | 5 | Sınav günü sayılır (hiçbir gün kısıtı yok) |
+| **Tek Ders** | 1 | Sınav günü sayılır (hiçbir gün kısıtı yok) |
 
-*"Sınav Takvimi ve Saat Ayarları"* bölümünden tipi seçip **Takvimi Doldur**
-dediğinde takvim bu standarda göre otomatik işaretlenir.
+Gün sayısında **kısıt yoktur** — vize 10-15 gün de sürebilir. *"Sınav Takvimi ve
+Saat Ayarları"* bölümünden tipi seçince **Gün** kutusuna varsayılan yazılır; istediğin
+sayıyı (1–60) girip **Takvimi Doldur** dediğinde takvim o kadar gün işaretlenir.
+Takvimden tek tek gün ekleyip çıkarmak da serbesttir. Sınav türü gün sayısından
+tahmin edilmez: 10 günlük bir vize yine VİZE başlığıyla çıkar.
 
 ### Öğretim yılı ve dönem (zorunlu)
 
@@ -121,7 +125,7 @@ Aynı bölümün en üst satırında **Öğretim Yılı** (ör. 2026/2027) ve **
 (Güz / Bahar) seçilir. İkisi de boş gelir; seçilmeden Şablon Oluştur, Otomatik
 Dağıt ve Excel çıktıları çalışmaz. Final / gözetmenli Excel'in başlıkları bu
 seçimden oluşur, örn. **"2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI"**
-(VİZE / FİNAL kısmı *Sınav Türü* seçiminden gelir). Seçim uygulama kapatılıp
+(VİZE / FİNAL / BÜTÜNLEME / TEK DERS kısmı *Sınav Türü* seçiminden gelir). Seçim uygulama kapatılıp
 açılınca korunur; **Uygulamayı Sıfırla** temizler.
 
 ---

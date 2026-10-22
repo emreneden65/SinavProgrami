@@ -16,7 +16,8 @@ namespace SinavProgrami.DataAccess
     ///
     /// Sayfa düzeni (ExcelMatrisExportHelper.SlotBazliOzetOlustur):
     ///   başlık: TARİH | GÜN | SAAT | BÖLÜM | DERS (ŞUBE) | KONTENJAN | ATANAN SALONLAR | [salon1..N]
-    ///   salon başlığı: "T4-207\n(40)"     salon hücresi: "25\nAhmet Yılmaz" veya 25
+    ///   salon başlığı: "T4-207\n(40)"     salon hücresi: "Ahmet Yılmaz" (öğrenci sayısı ATANAN
+    ///   SALONLAR sütunundan okunur), gözetmensizse 25; eski çıktılarda "25\nAhmet Yılmaz"
     ///   slot ayırıcı satırları (📅 ...) DERS kolonu boş olduğu için atlanır.
     ///
     /// Bu sayfada SINIF / ÖĞRETİM ELEMANI kolonu yoktur; bu yüzden okuyucu sıfırdan atama
@@ -102,16 +103,23 @@ namespace SinavProgrami.DataAccess
                     ExcelSatirNo = r
                 };
 
+                // ATANAN SALONLAR: "T4-204(65), T4-208(65)" → salon başına öğrenci sayısı.
+                // Gözetmenli kutularda yalnızca isim yazdığı için sayı buradan alınır.
+                var listeSayilari = AtananSalonSayilari(ws.Cells[r, 7].Value?.ToString());
+
                 foreach (var kv in salonlar)
                 {
                     string ham = ws.Cells[r, kv.Key].Value?.ToString()?.Trim();
                     if (string.IsNullOrWhiteSpace(ham)) continue;
 
-                    // 1. satır = öğrenci sayısı, kalan satırlar = gözetmen adı
+                    // Kutu: yalnızca isim (güncel çıktı), yalnızca sayı (gözetmensiz) veya
+                    // eski çıktılardaki "sayı\nisim"
                     var parca = ham.Split(new[] { '\n', '\r' }, 2, StringSplitOptions.RemoveEmptyEntries);
                     int? sayi = SayiCoz(parca[0]);
                     string gozetmen = parca.Length > 1 ? parca[1].Trim()
                                     : (sayi == null ? parca[0].Trim() : "");   // yalnızca isim yazılmışsa
+                    if (sayi == null && listeSayilari.TryGetValue(kv.Value.Kod, out int listedeki))
+                        sayi = listedeki;
 
                     satir.Salonlar.Add(new SalonAtama
                     {
@@ -173,6 +181,16 @@ namespace SinavProgrami.DataAccess
                 if (v == "TARİH" || v == "TARIH") return r;
             }
             return -1;
+        }
+
+        /// <summary>"T4-204(65), T1-211(30)" → { T4-204: 65, T1-211: 30 }.</summary>
+        private static Dictionary<string, int> AtananSalonSayilari(string metin)
+        {
+            var sonuc = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(metin)) return sonuc;
+            foreach (Match m in Regex.Matches(metin, @"([^,()\s][^,()]*?)\s*\(\s*(\d+)\s*\)"))
+                sonuc[m.Groups[1].Value.Trim()] = int.Parse(m.Groups[2].Value);
+            return sonuc;
         }
 
         private static int? SayiCoz(object v)

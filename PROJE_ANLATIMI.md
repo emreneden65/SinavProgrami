@@ -59,7 +59,7 @@ Proje şu an **hatasız derleniyor** (`dotnet build` → 0 hata, 0 uyarı).
 │   ├── SinavAtama.cs              Bir sınavın gün/saat/salon(lar) ataması + SalonAtama
 │   ├── Gozetmen.cs                Gözetmen (ad, bölüm, ağırlık, atanan sayı, skor)
 │   ├── DersHavuzu.cs              Farklı bölüm/şubeleri tek salonda birleştirme tanımı
-│   ├── SinavTipi.cs               Vize (7 gün) / Final (10 gün) takvim kuralları
+│   ├── SinavTipi.cs               Vize / Final takvim kuralları (varsayılan 7 / 10 gün, serbest)
 │   ├── SubeEtiketi.cs             Şube normalizasyonu (INT→D, 1→A, 2→B …)
 │   └── KayitliDers.cs             Eski "KayitliDersler" tablosu modeli (artık kullanılmıyor)
 │
@@ -101,16 +101,15 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
         │                                                    │
    1) Sınav Listesi Yükle ──► _dersListesi                    │
         │                                                    │
-   2) Şablon Oluştur (boş)  ─┐                               │
-   2+) Otomatik Dağıt ───────┴─► Şablon .xlsx  ──(elle düzelt)
+   2) Otomatik Şablon ──────────► Şablon .xlsx  ──(elle düzelt)
         │                                                    │
-   3) Salon Ataması İçin Dosya Yükle ──► _sablonSonuclari    │
+   3) Şablonu Geri Yükle ──► _sablonSonuclari    │
         │      (uygulama içinde grid'de de düzenlenebilir)   │
    4) Salonları Ata ──► _gunSalonSatirlari / _sonSonuclar    │
         │                                                    │
-      Salon Atanmış Dosya Çıkart ──► .xlsx ──(elle düzelt)   │
+      Salonlu Excel Çıkart ──► .xlsx ──(elle düzelt)   │
         │                                                    │
-   5) Gözetmenler için Dosya Yükle ──► _sonSonuclar     Gözetmen Yükle
+   5) Salonlu Excel Yükle ──► _sonSonuclar     Gözetmen Yükle
         │                                                    │
    6) Gözetmen Ata ◄─────────────────────────────────────────┘
         │
@@ -126,14 +125,13 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
 - Hoca bilgileri `%AppData%\SinavProgrami\hoca_eslemesi.json` dosyasına **kalıcı** kaydedilir
   (sonraki çıktılarda "Öğretim Elemanı" sütunu buradan doldurulur).
 
-### Adım 2 — Şablon Oluştur / Otomatik Dağıt
+### Adım 2 — Otomatik Şablon
 - **Sınıflar:** `CekilmisDerslerExportHelper`, `SablonDagitimAlgoritmasi`
 - Önce sağdaki **Sınav Takvimi** panelinden günler/saatler seçilmelidir
   (Vize/Final tipine göre "Takvimi Doldur" otomatik işaretler).
-- **Şablon Oluştur (boş):** `Templates\dagitim_sablonu.xlsx`'i kopyalayıp
-  "Çekilmiş Dersler" sayfasını doldurur; "Sınav Haftası Dağıtım Şablonu" sayfası boş takvimdir,
-  kullanıcı dersleri elle yerleştirir.
-- **Otomatik Dağıt:** Aynı dosyayı üretir ama dersleri kurallara göre takvime de yerleştirir.
+- **Otomatik Şablon:** `Templates\dagitim_sablonu.xlsx`'i kopyalayıp "Çekilmiş Dersler"
+  sayfasını doldurur ve dersleri kurallara göre takvime yerleştirir. Kullanıcı gerekirse
+  Excel'de elle düzeltir. (Ayrı "Boş Şablon" butonu kaldırıldı.)
 
 **Otomatik dağıtım kuralları (`SablonDagitimAlgoritmasi`):**
 1. Ortak dersler (kodu bölüm önekiyle — BIL/ELM/INS/MAK/MEK/MEM — başlamayanlar; ör. FIZ, MAT, TKN)
@@ -146,7 +144,7 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
 6. Bölüm bazlı **hata oranı** (% gelmeyecek öğrenci) kontenjandan düşülerek "efektif kontenjan"
    ile çalışılır.
 
-### Adım 3 — Salon Ataması İçin Dosya Yükle
+### Adım 3 — Şablonu Geri Yükle
 - **Sınıflar:** `DagitimSablonuOkuyucu`, `SablonDogrulayici`
 - Doldurulmuş şablonun "Sınav Haftası Dağıtım Şablonu" sayfası okunur → takvim + salonsuz yerleşim.
 - Takvimin gün sayısına göre Vize/Final tipi otomatik tahmin edilir.
@@ -156,7 +154,7 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
   bütünlüğü, sınıf-saat kuralı, dinlenme molası, slot kapasite aşımı) bulup hücreleri boyar.
   İhlaller **engelleyici değildir**, sadece uyarıdır.
 
-### Adım 4 — Salonları Ata + Salon Atanmış Dosya Çıkart
+### Adım 4 — Salonları Ata + Salonlu Excel Çıkart
 - **Sınıflar:** `GunlukSalonDagitici`, `GunSalonMatrisExportHelper`
 - Kurallar:
   1. **Şube izolasyonu:** Farklı şubeler aynı salona karıştırılmaz.
@@ -170,7 +168,7 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
 - Çıktı Excel'inde her sınav günü ayrı sayfa (sekme adı `GG.AA.YYYY`): satırlar dersler,
   sütunlar salonlar, hücreler öğrenci sayısı.
 
-### Adım 5 — Gözetmenler için Dosya Yükle
+### Adım 5 — Salonlu Excel Yükle
 - **Sınıf:** `GunSalonMatrisOkuyucu`
 - Kullanıcının elle düzeltmiş olabileceği salon atanmış Excel'i geri okur.
 

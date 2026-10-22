@@ -34,6 +34,8 @@ static class Program
             OgretimDonemiTestleri.Calistir(t);   // Madde 7 — öğretim yılı + dönem (Güz / Bahar)
             FormBaslikTestleri.Calistir(t);      // Madde 8 — form başlığında tam bölüm adı, 11 punto
             SaatBicimiTestleri.Calistir(t);      // Madde 9 — "(GÖZETMENLİ)" kalktı, Excel'de saat 13.00
+            GunSayisiTestleri.Calistir(t);       // Madde 10 — vize / final gün sayısı serbest
+            GozetmenGunDuzeniTestleri.Calistir(t); // Madde 11 — gözetmen gün dengesi, yakın saatler
         }
         finally
         {

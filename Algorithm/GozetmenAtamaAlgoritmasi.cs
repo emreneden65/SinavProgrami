@@ -76,6 +76,13 @@ namespace SinavProgrami.Algorithm
     ///   MUTLAK SINIR: K2 (çakışma koruması) Faz 2'de de esnetilmez. Fakir,
     ///   devredilecek görevin slotunda başka bir salonda görevliyse aktarım
     ///   yapılamaz. Fark yine de kapanamazsa nedenini söyleyen UYARI üretilir.
+    ///
+    /// ── FAZ 3: GÜN DÜZENİ (KARŞILIKLI TAKAS) ────────────────────────────────
+    ///   Toplam görev sayıları değişmeden iki gözetmen görev takas eder:
+    ///   G1) aynı ağırlıktakilerin bir gündeki görev sayıları dengeli olur
+    ///       (hafta sonu daha ağır sayılır); G2) bir kişinin aynı gündeki
+    ///       görevleri yakın saatlere toplanır (09:00 + 17:00 olmaz).
+    ///   K2 ve bölüm kuralı korunur; takas yalnızca cezayı düşürüyorsa yapılır.
     /// ═══════════════════════════════════════════════════════════════════════
     /// </summary>
     public class GozetmenAtamaAlgoritmasi
@@ -133,6 +140,9 @@ namespace SinavProgrami.Algorithm
         /// </summary>
         public int CaprazDestekDevri { get; private set; }
 
+        /// <summary>Faz 3'te (gün dengesi / yakın saatler) yapılan karşılıklı görev takası sayısı.</summary>
+        public int GunDuzeniTakasi { get; private set; }
+
         // ═══════════════════════════════════════════════════════════════════
         //  GİRİŞ NOKTASI
         // ═══════════════════════════════════════════════════════════════════
@@ -149,6 +159,7 @@ namespace SinavProgrami.Algorithm
             ToplamTakas = 0;
             DestekAtamaSayisi = 0;
             CaprazDestekDevri = 0;
+            GunDuzeniTakasi = 0;
 
             if (sinavAtamalari == null || sinavAtamalari.Count == 0)
                 throw new ArgumentException("Gözetmen ataması için önce sınav programı oluşturulmalıdır.");
@@ -167,6 +178,7 @@ namespace SinavProgrami.Algorithm
 
             Faz1_IlkDagitim(sinavAtamalari, gozetmenler);
             Faz2_YukDengeleme(sinavAtamalari, gozetmenler);
+            Faz3_GunDuzeni(gozetmenler);
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -359,6 +371,10 @@ namespace SinavProgrami.Algorithm
 
             /// <summary>Dersin bölümü — bölüm uyumu aranan aşamalarda kullanılır.</summary>
             public string DersBolumu;
+
+            /// <summary>Faz 3 — görevin günü ve saati (saat çözülemezse -1).</summary>
+            public DateTime Gun;
+            public double SaatDegeri;
         }
 
         /// <summary>Bir görevin kime, hangi koşulla devredilebileceğini belirleyen mod.</summary>
@@ -442,7 +458,9 @@ namespace SinavProgrami.Algorithm
                             SlotAnahtari = slotAnahtari,
                             SalonKodu = satir.SalonKodu,
                             DersBolumu = sinav.BolumAdi,
-                            Ortak = ortakDers
+                            Ortak = ortakDers,
+                            Gun = sinav.Gun.Date,
+                            SaatDegeri = SaatDegeriCoz(sinav.Saat)
                         };
                         birimHaritasi[birimAnahtari] = birim;
                         GorevListesi(satir.GozetmenAdSoyad).Add(birim);
@@ -732,6 +750,213 @@ namespace SinavProgrami.Algorithm
                 $"arasında {enCok - enAz:0.#} sınavlık fark kaldı. {sebep}\n" +
                 $"   Hedefin üstünde: {string.Join(", ", cok)}\n" +
                 $"   Hedefin altında: {string.Join(", ", az)}");
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  FAZ 3 — GÜN DÜZENİ (KARŞILIKLI TAKAS)
+        //  Faz 2'den sonra herkesin TOPLAM görev sayısı doğrudur; bu faz yalnızca
+        //  görevlerin GÜNLERE ve SAATLERE dağılımını iyileştirir:
+        //    G1) Gün dengesi — aynı ağırlıktaki gözetmenlerin bir gündeki görev
+        //        sayıları birbirine yakın olsun (biri Pazar 3, diğeri 0 olmasın).
+        //        Hafta sonu günleri daha ağır sayılır.
+        //    G2) Yakın saatler — bir gözetmenin aynı gündeki görevleri art arda
+        //        saatlerde toplansın (09:00 ile 17:00 aynı kişiye düşmesin).
+        //  Yalnızca KARŞILIKLI takas yapılır (A'nın görevi B'ye, B'ninki A'ya), bu
+        //  yüzden toplam görev sayıları / ağırlık dengesi hiç değişmez. K2 (çakışma)
+        //  mutlak; bölüm kodlu ders kendi bölümünden bir hocadan bölüm dışına çıkmaz.
+        //  Takas yalnızca toplam cezayı düşürüyorsa yapılır (esnek kural).
+        // ═══════════════════════════════════════════════════════════════════
+
+        /// <summary>G1 cezası: Σ (o günkü görev sayısı)² / ağırlık — sayılar ağırlıkla orantılıyken en küçük.</summary>
+        private const double GunDengesiAgirligi = 3.0;
+
+        /// <summary>Hafta sonu görevleri daha ağır sayılır (dengesizlik daha çok rahatsız eder).</summary>
+        private const double HaftaSonuCarpani = 2.0;
+
+        /// <summary>G2 cezası: aynı gün art arda iki görev arasındaki fazladan boşluk (saat) başına.</summary>
+        private const double SaatAraligiAgirligi = 1.0;
+
+        /// <summary>Art arda sayılan iki görev arası en fazla bu kadar saat (09:00 → 11:00 cezasız).</summary>
+        private const double NormalSlotAraligi = 2.0;
+
+        private const int Faz3MaksTur = 40;
+        private const long Faz3SureSiniriMs = 5000;
+
+        private Dictionary<(Gozetmen, DateTime), List<double>> _gunSaatleri;
+
+        private void Faz3_GunDuzeni(List<Gozetmen> gozetmenler)
+        {
+            var kisiler = gozetmenler
+                .GroupBy(g => g.AdSoyad ?? "", StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(gr => gr.Key, gr => gr.First(), StringComparer.OrdinalIgnoreCase);
+
+            var liste = new List<(GorevBirimi Birim, Gozetmen Sahip)>();
+            foreach (var kv in _gorevler)
+                if (kisiler.TryGetValue(kv.Key, out var g))
+                    foreach (var b in kv.Value) liste.Add((b, g));
+            liste = liste.OrderBy(x => x.Birim.Gun).ThenBy(x => x.Birim.SaatDegeri).ThenBy(x => x.Birim.SalonKodu).ToList();
+
+            int t = liste.Count;
+            var birim = liste.Select(x => x.Birim).ToArray();
+
+            // Çok sık yapılan kontroller için her şey bir kez sayıya çevrilir:
+            // kişi no, slot no, "kişi bu slotta görevli mi" ve bölüm eşleşmesi tabloları.
+            var kisiDizi = kisiler.Values.ToList();
+            var kisiNo = new Dictionary<Gozetmen, int>();
+            for (int k = 0; k < kisiDizi.Count; k++) kisiNo[kisiDizi[k]] = k;
+            var slotNoHaritasi = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var slot = new int[t];
+            var sahip = new int[t];
+            for (int i = 0; i < t; i++)
+            {
+                if (!slotNoHaritasi.TryGetValue(birim[i].SlotAnahtari, out int s))
+                    slotNoHaritasi[birim[i].SlotAnahtari] = s = slotNoHaritasi.Count;
+                slot[i] = s;
+                sahip[i] = kisiNo[liste[i].Sahip];
+            }
+            var mesgul = new int[kisiDizi.Count, slotNoHaritasi.Count];
+            for (int i = 0; i < t; i++) mesgul[sahip[i], slot[i]]++;
+            var eslesir = new bool[t, kisiDizi.Count];
+            for (int i = 0; i < t; i++)
+                for (int k = 0; k < kisiDizi.Count; k++)
+                    eslesir[i, k] = BolumEslesiyorMu(kisiDizi[k].Bolum, birim[i].DersBolumu);
+
+            // Bölüm kodlu ders, kendi bölümünden bir hocadan bölüm dışına çıkmaz. Ortak dersler ve
+            // zaten destekle (bölüm dışından) verilmiş görevler serbestçe yer değiştirebilir.
+            bool Izinli(int i, int veren, int alan) => birim[i].Ortak || eslesir[i, alan] || !eslesir[i, veren];
+
+            _gunSaatleri = new Dictionary<(Gozetmen, DateTime), List<double>>();
+            for (int i = 0; i < t; i++)
+                GunSaatListesi(kisiDizi[sahip[i]], birim[i].Gun).Add(birim[i].SaatDegeri);
+
+            var sure = System.Diagnostics.Stopwatch.StartNew();
+            for (int tur = 0; tur < Faz3MaksTur; tur++)
+            {
+                bool iyilesti = false;
+                for (int i = 0; i < t; i++)
+                {
+                    for (int j = i + 1; j < t; j++)
+                    {
+                        int a = sahip[i], b = sahip[j];
+                        if (a == b || slot[i] == slot[j]) continue;              // aynı slot: gün/saat değişmez
+                        if (mesgul[a, slot[j]] > 0 || mesgul[b, slot[i]] > 0) continue;   // K2
+                        if (!Izinli(i, a, b) || !Izinli(j, b, a)) continue;
+
+                        var ga = kisiDizi[a]; var gb = kisiDizi[b];
+                        if (TakasMaliyetFarki(birim[i], ga, birim[j], gb) >= -1e-6) continue;
+
+                        BirimiTasi(birim[i], ga, gb);
+                        BirimiTasi(birim[j], gb, ga);
+                        mesgul[a, slot[i]]--; mesgul[b, slot[i]]++;
+                        mesgul[b, slot[j]]--; mesgul[a, slot[j]]++;
+                        sahip[i] = b; sahip[j] = a;
+                        GunDuzeniTakasi++;
+                        iyilesti = true;
+                    }
+                    if (sure.ElapsedMilliseconds > Faz3SureSiniriMs) return;
+                }
+                if (!iyilesti) return;
+            }
+        }
+
+        /// <summary>
+        /// Takastan sonraki ceza − önceki ceza (negatifse takas iyileştirir). Yalnızca etkilenen
+        /// (kişi, gün) ikilileri hesaplanır; çok sık çağrıldığı için bellek ayırmaz.
+        /// </summary>
+        private double TakasMaliyetFarki(GorevBirimi x, Gozetmen a, GorevBirimi y, Gozetmen b)
+        {
+            double fark = 0;
+            if (x.Gun == y.Gun)
+            {
+                // Aynı gün: A ve B'nin o günkü görev sayısı değişmez, yalnızca saatler yer değiştirir
+                fark += GunFarki(a, x.Gun, x.SaatDegeri, y.SaatDegeri);
+                fark += GunFarki(b, x.Gun, y.SaatDegeri, x.SaatDegeri);
+            }
+            else
+            {
+                fark += GunFarki(a, x.Gun, x.SaatDegeri, null);   // A, X'in gününde bir görev verir
+                fark += GunFarki(a, y.Gun, null, y.SaatDegeri);   // A, Y'nin gününde bir görev alır
+                fark += GunFarki(b, y.Gun, y.SaatDegeri, null);
+                fark += GunFarki(b, x.Gun, null, x.SaatDegeri);
+            }
+            return fark;
+        }
+
+        /// <summary>Bir (kişi, gün) cezasının, bir saat çıkarılıp / eklenince değişimi.</summary>
+        private double GunFarki(Gozetmen g, DateTime gun, double? cikar, double? ekle)
+        {
+            _gunSaatleri.TryGetValue((g, gun), out var liste);
+            int n = liste?.Count ?? 0;
+            Span<double> once = stackalloc double[n];
+            Span<double> sonra = stackalloc double[n + 1];
+            int ns = 0;
+            bool cikarildi = cikar == null;
+            for (int i = 0; i < n; i++)
+            {
+                once[i] = liste[i];
+                if (!cikarildi && liste[i] == cikar.Value) { cikarildi = true; continue; }
+                sonra[ns++] = liste[i];
+            }
+            if (ekle != null) sonra[ns++] = ekle.Value;
+            return GunMaliyeti(g, gun, sonra.Slice(0, ns)) - GunMaliyeti(g, gun, once);
+        }
+
+        /// <summary>Bir gözetmenin bir gündeki cezası: G1 (görev yoğunluğu) + G2 (saat boşlukları).</summary>
+        private static double GunMaliyeti(Gozetmen g, DateTime gun, Span<double> saatler)
+        {
+            int n = saatler.Length;
+            if (n == 0) return 0;
+
+            bool haftaSonu = gun.DayOfWeek == DayOfWeek.Saturday || gun.DayOfWeek == DayOfWeek.Sunday;
+            double ceza = GunDengesiAgirligi * (haftaSonu ? HaftaSonuCarpani : 1.0) * n * n / EtkinAgirlik(g);
+
+            saatler.Sort();   // çözülemeyen saatler (-1) başa düşer, boşluk cezasına girmez
+            double onceki = -1;
+            foreach (var s in saatler)
+            {
+                if (s < 0) continue;
+                if (onceki >= 0)
+                    ceza += SaatAraligiAgirligi * Math.Max(0, s - onceki - NormalSlotAraligi);
+                onceki = s;
+            }
+            return ceza;
+        }
+
+        /// <summary>Bir görev birimini verenden alıcıya taşır; tüm haritaları ve istatistikleri günceller.</summary>
+        private void BirimiTasi(GorevBirimi birim, Gozetmen veren, Gozetmen alici)
+        {
+            foreach (var satir in birim.Satirlar)
+                satir.GozetmenAdSoyad = alici.AdSoyad;
+
+            var verenGorevleri = GorevListesi(veren.AdSoyad);
+            verenGorevleri.Remove(birim);
+            GorevListesi(alici.AdSoyad).Add(birim);
+
+            if (!verenGorevleri.Any(b => b.SlotAnahtari == birim.SlotAnahtari))
+                SlotKumesi(veren.AdSoyad).Remove(birim.SlotAnahtari);
+            SlotKumesi(alici.AdSoyad).Add(birim.SlotAnahtari);
+
+            GunSaatListesi(veren, birim.Gun).Remove(birim.SaatDegeri);
+            GunSaatListesi(alici, birim.Gun).Add(birim.SaatDegeri);
+
+            // Destek istatistiği: bölüm kodlu görev bölüm dışı bir hocadan kendi bölümüne dönebilir
+            if (!birim.Ortak)
+                DestekAtamaSayisi += (BolumEslesiyorMu(alici.Bolum, birim.DersBolumu) ? 0 : 1)
+                                   - (BolumEslesiyorMu(veren.Bolum, birim.DersBolumu) ? 0 : 1);
+        }
+
+        private List<double> GunSaatListesi(Gozetmen g, DateTime gun)
+        {
+            if (!_gunSaatleri.TryGetValue((g, gun), out var liste))
+                _gunSaatleri[(g, gun)] = liste = new List<double>();
+            return liste;
+        }
+
+        /// <summary>"09:00" → 9.0 (saat cinsinden); çözülemezse -1 (saat boşluğu cezasına girmez).</summary>
+        private static double SaatDegeriCoz(string saat)
+        {
+            var t = SaatYardimci.Anahtar(SaatYardimci.Normalize(saat));
+            return t == TimeSpan.MaxValue ? -1 : t.TotalHours;
         }
 
         // ═══════════════════════════════════════════════════════════════════

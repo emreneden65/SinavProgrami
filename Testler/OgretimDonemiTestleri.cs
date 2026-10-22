@@ -82,6 +82,8 @@ static class OgretimDonemiTestleri
                     "2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI", "Güz / vize başlığı yanlış.");
             Dogrula(AkademikDonem.ProgramBasligi(2027, Yariyil.Bahar, SinavDonemTipi.Final) ==
                     "2027-2028 ÖĞRETİM YILI BAHAR DÖNEMİ FİNAL SINAV PROGRAMI", "Bahar / final başlığı yanlış.");
+            Dogrula(AkademikDonem.ProgramBasligi(2026, Yariyil.Bahar, SinavDonemTipi.Butunleme) ==
+                    "2026-2027 ÖĞRETİM YILI BAHAR DÖNEMİ BÜTÜNLEME SINAV PROGRAMI", "Bahar / bütünleme başlığı yanlış.");
         });
 
         t.Test("Uygulamada seçilen yıl, dönem ve sınav türü başlığa yansıyor", () => BosFormIle(form =>
@@ -91,6 +93,46 @@ static class OgretimDonemiTestleri
             string baslik = (string)Cagir(form, "ProgramBasligi");
             Dogrula(baslik == "2026-2027 ÖĞRETİM YILI BAHAR DÖNEMİ FİNAL SINAV PROGRAMI", $"Başlık: {baslik}");
         }));
+
+        t.Test("Bütünleme seçilince başlık BÜTÜNLEME, gün kutusu 5, hafta sonu kısıtı yok", () => BosFormIle(form =>
+        {
+            Sec(form, 2026, bahar: true);
+            var tip = Alan<ComboBox>(form, "cmbSinavTipi");
+            Dogrula(tip.Items.Count >= 3 && (string)tip.Items[2] == "Bütünleme Programı", "Listede Bütünleme yok.");
+            tip.SelectedIndex = 2;
+            string baslik = (string)Cagir(form, "ProgramBasligi");
+            Dogrula(baslik == "2026-2027 ÖĞRETİM YILI BAHAR DÖNEMİ BÜTÜNLEME SINAV PROGRAMI", $"Başlık: {baslik}");
+            Dogrula(Alan<NumericUpDown>(form, "numGunSayisi").Value == 5, "Gün kutusu 5 değil.");
+            // 22.10.2026 Perşembe → Per, Cum, Cmt, Paz, Pzt: hafta sonu atlanmaz
+            var gunler = SinavTipi.GunleriUret(new DateTime(2026, 10, 22), SinavDonemTipi.Butunleme);
+            Dogrula(gunler.Count == 5 && gunler.Last() == new DateTime(2026, 10, 26),
+                $"Bütünleme takvimi art arda 5 gün değil (son gün {gunler.LastOrDefault():dd.MM}).");
+            Dogrula(SinavTipi.CumartesiSinavGunuMu(SinavDonemTipi.Butunleme) && SinavTipi.PazarSinavGunuMu(SinavDonemTipi.Butunleme),
+                "Bütünleme'de hafta sonu kısıtı var.");
+        }));
+
+        t.Test("Tek Ders seçilince başlık TEK DERS, gün kutusu 1, hafta sonu kısıtı yok", () => BosFormIle(form =>
+        {
+            Sec(form, 2026, bahar: false);
+            var tip = Alan<ComboBox>(form, "cmbSinavTipi");
+            Dogrula(tip.Items.Count == 4 && (string)tip.Items[3] == "Tek Ders Sınavları", "Listede Tek Ders yok.");
+            tip.SelectedIndex = 3;
+            string baslik = (string)Cagir(form, "ProgramBasligi");
+            Dogrula(baslik == "2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ TEK DERS SINAV PROGRAMI", $"Başlık: {baslik}");
+            Dogrula(Alan<NumericUpDown>(form, "numGunSayisi").Value == 1, "Gün kutusu 1 değil.");
+            // Cumartesi başlarsa hafta sonu atlanmaz
+            var gunler = SinavTipi.GunleriUret(new DateTime(2026, 10, 24), SinavDonemTipi.TekDers);
+            Dogrula(gunler.Count == 1 && gunler[0] == new DateTime(2026, 10, 24), "Tek ders günü hafta sonuna konamadı.");
+        }));
+
+        t.Test("Bütünleme seçimi kapatıp açınca korunuyor", () =>
+        {
+            BosFormIle(form => Alan<ComboBox>(form, "cmbSinavTipi").SelectedIndex = 2);
+            using var yeniden = FormuAc();
+            Dogrula(Alan<SinavDonemTipi>(yeniden, "_sinavTipi") == SinavDonemTipi.Butunleme &&
+                    Alan<ComboBox>(yeniden, "cmbSinavTipi").SelectedIndex == 2, "Bütünleme seçimi geri gelmedi.");
+            yeniden.Close();
+        });
 
         t.Test("Seçim kapatıp açınca korunuyor (Madde 1 ile)", () =>
         {

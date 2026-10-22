@@ -19,46 +19,66 @@ static class PencereTestleri
             Dogrula(form.MaximizeBox, "Tam ekran (büyüt) düğmesi kapalı.");
         }));
 
-        t.Test("Tam ekranda sonuç paneli açılıyor ve tablolar ekranı dolduruyor", () => BosFormIle(form =>
+        t.Test("Sonuç paneli ana pencerede gizli; düğme ayrı pencerede açıyor, tekrar basınca kapatıyor", () => BosFormIle(form =>
         {
-            form.WindowState = FormWindowState.Maximized;
-            Bekle();
-            var sol = Alan<Panel>(form, "panelSol");
+            var buton = Alan<Button>(form, "btnSagToggle");
             var sag = Alan<Panel>(form, "panelSag");
+            Dogrula(!sag.Visible && buton.Enabled, "Açılışta panel görünür ya da düğme pasif.");
+
+            buton.PerformClick(); Bekle();
+            var pencere = Alan<Form>(form, "_sonucPenceresi");
+            Dogrula(pencere != null && pencere.Visible, "Sonuç penceresi açılmadı.");
+            Dogrula(sag.Parent == pencere && sag.Visible, "Sonuç paneli ayrı pencereye taşınmadı.");
             var sekmeler = Alan<TabControl>(form, "tabControlSonuc");
-            Dogrula(sag.Visible, "Tam ekranda sonuç paneli açılmadı (sağ taraf boş).");
-            Dogrula(sol.Height == form.ClientSize.Height, "Sol panel pencere boyunca uzamadı.");
-            Dogrula(sag.Left >= sol.Right - 1 && sag.Right >= form.ClientSize.Width - 1, "Sonuç paneli kalan alanı doldurmuyor.");
-            Dogrula(sekmeler.Width > sag.Width - 80 && sekmeler.Bottom > sag.Height - 80,
-                $"Sonuç tabloları büyümedi ({sekmeler.Size}, panel {sag.Size}).");
+            Dogrula(sekmeler.Width > pencere.ClientSize.Width - 80 && sekmeler.Bottom > pencere.ClientSize.Height - 80,
+                $"Sonuç tabloları pencereyi doldurmuyor ({sekmeler.Size}, pencere {pencere.ClientSize}).");
+
+            buton.PerformClick(); Bekle();
+            Dogrula(Alan<Form>(form, "_sonucPenceresi") == null && pencere.IsDisposed, "Sonuç penceresi kapanmadı.");
+            Dogrula(sag.Parent == form && !sag.Visible, "Panel ana pencereye gizli olarak dönmedi.");
         }));
 
-        t.Test("Tam ekrandan çıkınca otomatik açılan panel kapanıyor, pencere eski boyutuna dönüyor", () => BosFormIle(form =>
+        t.Test("Sonuç penceresi normal boyutta da açılıyor; ana pencere tam ekranda paneli göstermiyor", () => BosFormIle(form =>
+        {
+            Alan<Button>(form, "btnSagToggle").PerformClick(); Bekle();
+            Dogrula(Alan<Form>(form, "_sonucPenceresi") != null, "Normal boyutta sonuç penceresi açılmadı.");
+            Alan<Button>(form, "btnSagToggle").PerformClick(); Bekle();
+
+            form.WindowState = FormWindowState.Maximized; Bekle();
+            var sol = Alan<Panel>(form, "panelSol");
+            Dogrula(!Alan<Panel>(form, "panelSag").Visible, "Tam ekranda ana pencerede sonuç paneli açıldı.");
+            Dogrula(sol.Width >= form.ClientSize.Width - 1 && sol.Height == form.ClientSize.Height,
+                "Tam ekranda sol panel pencereyi doldurmuyor.");
+        }));
+
+        t.Test("Tam ekrandan çıkınca pencere eski boyutuna dönüyor", () => BosFormIle(form =>
         {
             var normalBoyut = form.Size;
             form.WindowState = FormWindowState.Maximized; Bekle();
             form.WindowState = FormWindowState.Normal; Bekle();
-            Dogrula(!Alan<Panel>(form, "panelSag").Visible, "Tam ekranın açtığı panel normale dönünce kapanmadı (sağda şerit kalır).");
             Dogrula(form.Size == normalBoyut, $"Pencere eski boyutuna dönmedi: {form.Size} (beklenen {normalBoyut}).");
         }));
 
-        t.Test("Tam ekranda panel elle açıldıysa normale dönünce pencere paneli gösterecek kadar genişliyor", () => BosFormIle(form =>
+        t.Test("Sonuç penceresi açıkken kapatılırsa yeniden açılışta açık geliyor; ana pencereyle kapanıyor", () =>
         {
-            form.WindowState = FormWindowState.Maximized; Bekle();
-            var buton = Alan<Button>(form, "btnSagToggle");
-            buton.PerformClick(); buton.PerformClick();   // kullanıcı kapatıp yeniden açtı
-            form.WindowState = FormWindowState.Normal; Bekle();
-            int ekran = Screen.FromControl(form).WorkingArea.Width - (form.Width - form.ClientSize.Width);
-            Dogrula(Alan<Panel>(form, "panelSag").Visible, "Kullanıcının açtığı panel kapandı.");
-            Dogrula(form.ClientSize.Width >= Math.Min(1300, ekran), $"Pencere genişlemedi: {form.ClientSize.Width}.");
-        }));
+            Form ilkPencere = null;
+            BosFormIle(form =>
+            {
+                Alan<Button>(form, "btnSagToggle").PerformClick(); Bekle();
+                ilkPencere = Alan<Form>(form, "_sonucPenceresi");
+            });
+            Dogrula(ilkPencere != null && ilkPencere.IsDisposed, "Ana pencere kapanınca sonuç penceresi açık kaldı.");
+            using var yeniden = FormuAc();
+            Dogrula(Alan<Form>(yeniden, "_sonucPenceresi") != null && Alan<Panel>(yeniden, "panelSag").Visible,
+                "Yeniden açılışta sonuç penceresi açılmadı.");
+            yeniden.Close();
+        });
 
         t.Test("Tam ekranda kapatılırsa yeniden tam ekran açılıyor (Madde 1 ile)", () =>
         {
             BosFormIle(form => { form.WindowState = FormWindowState.Maximized; Bekle(); });
             using var yeniden = FormuAc();
             Dogrula(yeniden.WindowState == FormWindowState.Maximized, "Yeniden açılışta tam ekran değil.");
-            Dogrula(Alan<Panel>(yeniden, "panelSag").Visible, "Yeniden açılışta sonuç paneli kapalı.");
             yeniden.Close();
         });
 

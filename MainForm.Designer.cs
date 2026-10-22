@@ -57,7 +57,6 @@ namespace SinavProgrami
             calendarSinav = new MonthCalendar();
             chkGunEtkin = new CheckBox();
             flowSaatler = new FlowLayoutPanel();
-            btnSablonOlustur = new Button();
             btnOtomatikDagit = new Button();
             btnSablonYukle = new Button();
             btnSalonExport = new Button();
@@ -139,7 +138,6 @@ namespace SinavProgrami
             panelSol.Controls.Add(calendarSinav);
             panelSol.Controls.Add(chkGunEtkin);
             panelSol.Controls.Add(flowSaatler);
-            panelSol.Controls.Add(btnSablonOlustur);
             panelSol.Controls.Add(btnOtomatikDagit);
             panelSol.Controls.Add(btnSablonYukle);
             panelSol.Controls.Add(btnSalonExport);
@@ -325,7 +323,7 @@ namespace SinavProgrami
             btnExcelImport.Cursor = Cursors.Hand;
             btnExcelImport.FlatAppearance.BorderSize = 0;
             btnExcelImport.FlatStyle = FlatStyle.Flat;
-            btnExcelImport.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            btnExcelImport.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
             btnExcelImport.ForeColor = Color.FromArgb(30, 30, 46);
             btnExcelImport.Location = new Point(545, 80);
             btnExcelImport.Name = "btnExcelImport";
@@ -530,23 +528,6 @@ namespace SinavProgrami
             flowSaatler.Size = new Size(246, 130);
             flowSaatler.TabIndex = 22;
             //
-            // btnSablonOlustur
-            //
-            btnSablonOlustur.BackColor = Color.FromArgb(148, 226, 213);
-            btnSablonOlustur.Cursor = Cursors.Hand;
-            btnSablonOlustur.Enabled = false;
-            btnSablonOlustur.FlatAppearance.BorderSize = 0;
-            btnSablonOlustur.FlatStyle = FlatStyle.Flat;
-            btnSablonOlustur.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
-            btnSablonOlustur.ForeColor = Color.FromArgb(30, 30, 46);
-            btnSablonOlustur.Location = new Point(545, 128);
-            btnSablonOlustur.Name = "btnSablonOlustur";
-            btnSablonOlustur.Size = new Size(122, 48);
-            btnSablonOlustur.TabIndex = 23;
-            btnSablonOlustur.Text = "📐 Şablon Oluştur (Boş)";
-            btnSablonOlustur.TextAlign = ContentAlignment.MiddleCenter;
-            btnSablonOlustur.UseVisualStyleBackColor = false;
-            //
             // btnOtomatikDagit
             //
             btnOtomatikDagit.BackColor = Color.FromArgb(250, 179, 135);
@@ -560,7 +541,7 @@ namespace SinavProgrami
             btnOtomatikDagit.Name = "btnOtomatikDagit";
             btnOtomatikDagit.Size = new Size(122, 48);
             btnOtomatikDagit.TabIndex = 37;
-            btnOtomatikDagit.Text = "⚙ Şablon Oluştur (Otomatik)";
+            btnOtomatikDagit.Text = "⚙ Otomatik Şablon";
             btnOtomatikDagit.TextAlign = ContentAlignment.MiddleCenter;
             btnOtomatikDagit.UseVisualStyleBackColor = false;
             //
@@ -576,7 +557,7 @@ namespace SinavProgrami
             btnSablonYukle.Name = "btnSablonYukle";
             btnSablonYukle.Size = new Size(250, 40);
             btnSablonYukle.TabIndex = 36;
-            btnSablonYukle.Text = "📥 Salon Ataması İçin Dosya Yükle";
+            btnSablonYukle.Text = "📥 Şablonu Geri Yükle";
             btnSablonYukle.TextAlign = ContentAlignment.MiddleLeft;
             btnSablonYukle.UseVisualStyleBackColor = false;
             //
@@ -593,7 +574,7 @@ namespace SinavProgrami
             btnSalonExport.Name = "btnSalonExport";
             btnSalonExport.Size = new Size(250, 40);
             btnSalonExport.TabIndex = 38;
-            btnSalonExport.Text = "📤 Salon Atanmış Dosya Çıkart";
+            btnSalonExport.Text = "📤 Salonlu Excel Çıkart";
             btnSalonExport.TextAlign = ContentAlignment.MiddleLeft;
             btnSalonExport.UseVisualStyleBackColor = false;
             //
@@ -609,7 +590,7 @@ namespace SinavProgrami
             btnGozetmenDosyaYukle.Name = "btnGozetmenDosyaYukle";
             btnGozetmenDosyaYukle.Size = new Size(250, 40);
             btnGozetmenDosyaYukle.TabIndex = 39;
-            btnGozetmenDosyaYukle.Text = "📥 Gözetmenler için Dosya Yükle";
+            btnGozetmenDosyaYukle.Text = "📥 Salonlu Excel Yükle";
             btnGozetmenDosyaYukle.TextAlign = ContentAlignment.MiddleLeft;
             btnGozetmenDosyaYukle.UseVisualStyleBackColor = false;
             //
@@ -671,7 +652,7 @@ namespace SinavProgrami
             btnMatrisExport.Name = "btnMatrisExport";
             btnMatrisExport.Size = new Size(250, 40);
             btnMatrisExport.TabIndex = 25;
-            btnMatrisExport.Text = "📊 Gözetmenli Taslak Çıkart";
+            btnMatrisExport.Text = "📊 Taslak Excel Çıkart";
             btnMatrisExport.UseVisualStyleBackColor = false;
             //
             // btnGozetmenliYukle — ADIM 7: elle düzenlenmiş gözetmenli dosyayı geri yükle
@@ -687,7 +668,7 @@ namespace SinavProgrami
             btnGozetmenliYukle.Name = "btnGozetmenliYukle";
             btnGozetmenliYukle.Size = new Size(250, 40);
             btnGozetmenliYukle.TabIndex = 32;
-            btnGozetmenliYukle.Text = "📥 Düzenlenmiş Dosyayı Yükle";
+            btnGozetmenliYukle.Text = "📥 Taslağı Geri Yükle";
             btnGozetmenliYukle.UseVisualStyleBackColor = false;
             //
             // btnFinalExport — ADIM 7 sonu: güncel programın final çıktısı
@@ -1123,11 +1104,10 @@ namespace SinavProgrami
         private System.Windows.Forms.FlowLayoutPanel flowSaatler;
 
         // Aksiyon Butonları — Aşamalı Akış
-        private System.Windows.Forms.Button btnSablonOlustur;   // ADIM 2: Çekilmiş Dersler Excel'i üret (boş şablon)
         private System.Windows.Forms.Button btnOtomatikDagit;   // Şablon Oluştur (Otomatik Dağılmış)
-        private System.Windows.Forms.Button btnSablonYukle;     // Salon Ataması İçin Dosya Yükle
-        private System.Windows.Forms.Button btnSalonExport;     // Salon Atanmış Dosya Çıkart
-        private System.Windows.Forms.Button btnGozetmenDosyaYukle; // Gözetmenler için Dosya Yükle
+        private System.Windows.Forms.Button btnSablonYukle;     // Şablonu Geri Yükle
+        private System.Windows.Forms.Button btnSalonExport;     // Salonlu Excel Çıkart
+        private System.Windows.Forms.Button btnGozetmenDosyaYukle; // Salonlu Excel Yükle
         private System.Windows.Forms.ComboBox cmbSablonMod;     // Otomatik Dağıt (Kurallı) / Boş Şablon seçimi
         private System.Windows.Forms.Button btnSalonAta;        // AŞAMA C: Toptan salon dağıtımı
         private System.Windows.Forms.Button btnTemizle;

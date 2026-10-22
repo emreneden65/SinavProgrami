@@ -66,6 +66,34 @@ static class SalonSirasiTestleri
             }
         }));
 
+        t.Test("Slot planında gözetmenli kutularda yalnızca isim var; geri yüklemede öğrenci sayıları korunuyor", () => TaslakIle((paket, yol, kaynak) =>
+        {
+            var ws = paket.Workbook.Worksheets[GozetmenliSablonOkuyucu.SayfaAdi];
+            var adlar = new HashSet<string>(kaynak.SelectMany(s => s.AtananSalonlar).Select(s => s.GozetmenAdSoyad)
+                .Where(a => !string.IsNullOrWhiteSpace(a)));
+            int isimliKutu = 0;
+            foreach (var hucre in ws.Cells[ws.Dimension.Address])
+                if (hucre.Start.Column >= 8 && adlar.Any(a => (hucre.Text ?? "").Contains(a)))
+                {
+                    isimliKutu++;
+                    Dogrula(!Regex.IsMatch(hucre.Text, @"\d"), $"{hucre.Address}: kutuda sayı var: \"{hucre.Text}\"");
+                }
+            Dogrula(isimliKutu > 0, "Gözetmen adı yazan kutu bulunamadı.");
+
+            var hedef = Sonuclar();
+            foreach (var sa in hedef.SelectMany(s => s.AtananSalonlar)) sa.AtananOgrenciSayisi = 0;
+            var okuma = GozetmenliSablonOkuyucu.Oku(yol);
+            GozetmenliSablonOkuyucu.Uygula(hedef, okuma);
+            Dogrula(!okuma.Uyarilar.Any(u => u.Contains("öğrenci sayısı yok")), string.Join(" | ", okuma.Uyarilar));
+            foreach (var (k, h) in kaynak.Zip(hedef))
+            {
+                var okunan = h.AtananSalonlar.ToDictionary(s => s.SalonKodu, s => s.AtananOgrenciSayisi);
+                foreach (var s in k.AtananSalonlar)
+                    Dogrula(okunan.TryGetValue(s.SalonKodu, out int n) && n == s.AtananOgrenciSayisi,
+                        $"'{k.DersAdi}' {s.SalonKodu}: beklenen {s.AtananOgrenciSayisi}, okunan {n}.");
+            }
+        }));
+
         t.Test("Uygulamadaki Matris görünümü de T4 ile başlıyor", () =>
         {
             OturumKaydi.Sil();

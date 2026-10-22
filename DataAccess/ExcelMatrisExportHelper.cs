@@ -573,7 +573,9 @@ namespace SinavProgrami.DataAccess
                     ws.Cells[row, 6].Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
 
                     // Bu sınavın atandığı salon hücrelerini doldur (yeşil)
-                    // Gözetmen atanmışsa öğrenci sayısının altına gözetmen adı yazılır
+                    // Gözetmen atanmışsa YALNIZCA gözetmen adı yazılır (öğrenci sayısı zaten
+                    // ATANAN SALONLAR sütununda "T4-204(65)" olarak duruyor; okuyucu oradan alır).
+                    // Gözetmen yoksa kutu boş kalmasın diye öğrenci sayısı yazılır.
                     if (sinav.AtananSalonlar != null)
                     {
                         bool gozetmenVar = false;
@@ -584,7 +586,7 @@ namespace SinavProgrami.DataAccess
 
                             if (!string.IsNullOrWhiteSpace(sa.GozetmenAdSoyad))
                             {
-                                salonHucre.Value = $"{sa.AtananOgrenciSayisi}\n{sa.GozetmenAdSoyad}";
+                                salonHucre.Value = sa.GozetmenAdSoyad;
                                 salonHucre.Style.WrapText = true;
                                 salonHucre.Style.Font.Size = 8;
                                 gozetmenVar = true;

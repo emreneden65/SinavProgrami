@@ -23,6 +23,9 @@ static class SablonTakvimiTestleri
 
         t.Test("10 günlük final tek satırda; şablonda olmayan 8–10. bloklar biçimli", () =>
             GunleriKontrolEt(SinavTipi.GunleriUret(new DateTime(2026, 10, 26), SinavDonemTipi.Final)));
+
+        t.Test("15 günlük vize (gün sayısı serbest) tek satırda ve geri okunuyor", () =>
+            GunleriKontrolEt(SinavTipi.GunleriUret(new DateTime(2026, 10, 26), SinavDonemTipi.Vize, 15)));
     }
 
     private static void GunleriKontrolEt(List<DateTime> gunler)
