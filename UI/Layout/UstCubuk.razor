@@ -1,0 +1,86 @@
+@inherits DurumaBagliBilesen
+@inject AyarlarDeposu Ayarlar
+@inject IPencereServisi Pencere
+@inject IDialogService Diyalog
+@inject NavigationManager Gezgin
+
+@* Üst çubuk: uygulama adı, seçili dönemin özeti (tıklayınca Dönem sayfası), deneme verisi uyarısı, tema düğmesi *@
+<div class="ust-sol">
+    <img class="uygulama-logosu" src="img/logo.png" alt="" aria-hidden="true" />
+    <span class="uygulama-adi">Sınav Programı</span>
+
+    <button type="button" class="donem-ozeti @(DonemSecili ? "" : "eksik")" @onclick='() => Gezgin.NavigateTo("donem")'
+            title="Öğretim dönemi ve sınav takvimi — değiştirmek için tıklayın">
+        <MudIcon Icon="@Icons.Material.Outlined.School" Size="Size.Small" />
+        <span>@DonemMetni</span>
+        <span class="ayrac">·</span>
+        <span>@SinavTipi.Ad(Durum.SinavTipi)</span>
+        <span class="ayrac">·</span>
+        <span>@GunMetni</span>
+    </button>
+</div>
+
+<div class="ust-sag">
+    @if (VeriKlasoru.DenemeModu)
+    {
+        <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
+            <ActivatorContent>
+                <button type="button" class="deneme-rozeti" title="Uygulama şu an gerçek verinin bir kopyasıyla çalışıyor (--deneme)">
+                    <MudIcon Icon="@Icons.Material.Outlined.Science" Size="Size.Small" />
+                    <span>Deneme verisi</span>
+                </button>
+            </ActivatorContent>
+            <ChildContent>
+                <div class="deneme-aciklama">
+                    Uygulama <code>--deneme</code> ile açıldı: gerçek oturum dosyanızın <b>kopyasıyla</b> çalışır.
+                    Burada yaptığınız değişiklikler asıl verinizi etkilemez.
+                </div>
+                <MudMenuItem Icon="@Icons.Material.Outlined.History" OnClick="DenemeVerisiniYenile">
+                    Gerçek verinin güncel kopyasını al…
+                </MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.FolderOpen" OnClick="() => Pencere.KlasoruAc(VeriKlasoru.DenemeKlasoru)">
+                    Deneme klasörünü aç
+                </MudMenuItem>
+            </ChildContent>
+        </MudMenu>
+    }
+
+    <MudTooltip Text="@(Ayarlar.Ayarlar.KoyuTema ? "Açık temaya geç" : "Koyu temaya geç")" Placement="Placement.Bottom">
+        <MudIconButton id="tema-dugmesi" Icon="@(Ayarlar.Ayarlar.KoyuTema ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)"
+                       Size="Size.Medium" OnClick="() => Ayarlar.TemaAyarla(!Ayarlar.Ayarlar.KoyuTema)"
+                       aria-label="Temayı değiştir" />
+    </MudTooltip>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Ayarlar.Degisti += TemaDegisti;   // tema Ayarlar sayfasından da değiştirilebilir
+    }
+
+    private void TemaDegisti() => InvokeAsync(StateHasChanged);
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        Ayarlar.Degisti -= TemaDegisti;
+    }
+
+    private bool DonemSecili => Durum.OgretimYili.HasValue && Durum.Yariyil.HasValue;
+
+    private string DonemMetni => DonemSecili
+        ? $"{AkademikDonem.YilGorunen(Durum.OgretimYili.Value)} {AkademikDonem.YariyilAdi(Durum.Yariyil.Value)}"
+        : "Öğretim dönemi seçilmedi";
+
+    private string GunMetni => Durum.TakvimSlotlari.Count == 0 ? "sınav günü yok" : $"{Durum.TakvimSlotlari.Count} sınav günü";
+
+    private async Task DenemeVerisiniYenile()
+    {
+        bool onay = await Diyalog.OnaylaAsync("Deneme Verisini Yenile",
+            "Deneme kopyası, gerçek oturum dosyanızın şu anki haliyle değiştirilecek ve uygulama yeniden başlayacak.\n\n" +
+            "Bu denemede yaptığınız değişiklikler kaybolur. Gerçek dosyanız yalnızca okunur, değiştirilmez.\n\nDevam edilsin mi?",
+            "Yenile ve yeniden başlat", "Vazgeç");
+        if (onay) Pencere.DenemeVerisiyleYenidenBaslat();
+    }
+}

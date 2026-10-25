@@ -1,0 +1,33 @@
+@inherits DurumaBagliBilesen
+@inject DersServisi Servis
+
+@* Bölüm bazlı hata oranı: sınava gelmeyecek potansiyel kişi yüzdesi *@
+<p class="sekme-aciklamasi">
+    Her bölüm için sınava <b>gelmeyecek</b> öğrenci yüzdesini girin. Şablon ve salon hesapları kontenjanı bu oranda
+    düşürerek yapar — örneğin 120 kişilik ders, %20 ile salonlara 96 kişi gibi dağıtılır. 0 bırakılırsa oran uygulanmaz.
+</p>
+
+<div class="tablo-kabi dar-tablo">
+    <table class="tablo">
+        <thead>
+            <tr>
+                <th scope="col">Bölüm</th>
+                <th scope="col" class="sayisal sag">Hata oranı (%)</th>
+                <th scope="col" class="sayisal sag">100 kişilik sınava gelecek</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var satir in Servis.HataOraniSatirlari())
+            {
+                <tr @key="satir.Bolum">
+                    <td>@satir.Bolum</td>
+                    <td class="sayisal sag">
+                        <HucreDuzenleyici Sayi="true" Deger="@satir.Metin" Etiket="@($"{satir.Bolum} hata oranı")"
+                                          Kaydet="v => Servis.HataOraniAyarla(satir.Bolum, v)" />
+                    </td>
+                    <td class="sayisal sag soluk">@(satir.Oran > 0 ? $"{Math.Round(100 - satir.Oran, 1)} kişi" : "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>

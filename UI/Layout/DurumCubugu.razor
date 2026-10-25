@@ -1,0 +1,67 @@
+@inherits DurumaBagliBilesen
+@inject OturumYoneticisi Oturum
+
+@* Durum çubuğu: son işlemin sonucu (eski durum satırı) + son kayıt saati. Mesaja tıklayınca son işlemler listelenir. *@
+<div class="durum-sol">
+    <MudMenu AnchorOrigin="Origin.TopLeft" TransformOrigin="Origin.BottomLeft" Dense="true" MaxHeight="420">
+        <ActivatorContent>
+            <button type="button" class="durum-mesaji @Sinif(Durum.Durum.Tur)" title="Son işlemler için tıklayın">
+                <span class="durum-noktasi" aria-hidden="true"></span>
+                <span class="durum-metni">@Durum.Durum.Metin</span>
+            </button>
+        </ActivatorContent>
+        <ChildContent>
+            <div class="durum-gecmisi">
+                <div class="durum-gecmisi-basligi">Son işlemler</div>
+                @if (Durum.DurumGecmisi.Count == 0)
+                {
+                    <div class="durum-gecmisi-bos">Henüz bir işlem yapılmadı.</div>
+                }
+                @foreach (var m in Durum.DurumGecmisi)
+                {
+                    <div class="durum-gecmisi-satiri @Sinif(m.Tur)">
+                        <span class="durum-noktasi" aria-hidden="true"></span>
+                        <span class="durum-saati">@m.Zaman.ToString("HH:mm:ss")</span>
+                        <span>@m.Metin</span>
+                    </div>
+                }
+            </div>
+        </ChildContent>
+    </MudMenu>
+</div>
+
+<div class="durum-sag" title="Çalışmanız 15 saniyede bir ve kapanışta otomatik kaydedilir">
+    <MudIcon Icon="@Icons.Material.Outlined.Schedule" Size="Size.Small" />
+    @if (Oturum.SonKayitZamani is DateTime zaman)
+    {
+        <span>Son kayıt @zaman.ToString("HH:mm")</span>
+    }
+    else
+    {
+        <span>Henüz kaydedilmedi</span>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Oturum.KayitYapildi += Yenile;
+    }
+
+    private void Yenile() => InvokeAsync(StateHasChanged);
+
+    private static string Sinif(DurumTuru tur) => tur switch
+    {
+        DurumTuru.Basari => "basari",
+        DurumTuru.Uyari => "uyari",
+        DurumTuru.Hata => "hata",
+        _ => "bilgi"
+    };
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        Oturum.KayitYapildi -= Yenile;
+    }
+}

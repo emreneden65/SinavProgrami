@@ -1,0 +1,269 @@
+@implements IDisposable
+@inject SalonServisi Servis
+@inject IJSRuntime JS
+@inject ISnackbar Bildirim
+
+@* Salon matrisi (eski dgvMatris): her şube bir satır, her derslik bir sütun; hücrede şube harfi (ya da öğrenci
+   sayısı). Binlerce satırda akıcı kalsın diye satırlar sanal kaydırmayla çizilir; soldaki 6 sütun sabittir.
+   Excel gibi: tıkla = seç · oklar = gez · Enter / F2 / çift tıklama ya da rakam = öğrenci sayısını düzenle ·
+   Delete = salon atamasını sil (geri alınabilir) · Ctrl + tekerlek = yakınlaştır. *@
+<div id="@_kapId" class="izgara-kabi matris-kabi" style="@($"--olcek: {Olcek}; --satir: {SatirYuksekligi}px")">
+    <table @ref="_tablo" class="matris-izgarasi" role="grid" aria-label="Salon matrisi" aria-rowcount="@(_satirlar.Count + 1)">
+        <colgroup>
+            <col class="m-bolum" /><col class="m-sinif" /><col class="m-tarih" /><col class="m-saat" /><col class="m-ders" /><col class="m-kont" />
+            @foreach (var _ in Matris.Salonlar)
+            {
+                <col class="m-salon" />
+            }
+        </colgroup>
+        <thead>
+            <tr>
+                <th class="sabit s1" scope="col">Bölüm</th>
+                <th class="sabit s2" scope="col">Sınıf</th>
+                <th class="sabit s3" scope="col">Tarih</th>
+                <th class="sabit s4" scope="col">Saat</th>
+                <th class="sabit s5 sol" scope="col">Dersler</th>
+                <th class="sabit s6 son-sabit" scope="col" title="Kontenjan">Kont.</th>
+                @foreach (var salon in Matris.Salonlar)
+                {
+                    <th class="salon-basligi @(salon.UygulamaliMi ? "uygulamali" : "")" scope="col"
+                        title="@($"{salon.SalonKodu} — kapasite {salon.Kapasite}{(salon.UygulamaliMi ? " (uygulamalı)" : "")}")">
+                        <span class="kod">@salon.SalonKodu</span><span class="kapasite">@salon.Kapasite</span>
+                    </th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            <Virtualize Items="_satirlar" Context="oge" ItemSize="SatirYuksekligi" OverscanCount="15" SpacerElement="tr">
+                @{
+                    var (r, satir) = oge;
+                }
+                <tr @key="satir" class="@(satir.Bos ? "bos" : satir.GrupSira % 2 == 1 ? "zebra" : "")">
+                    <td class="sabit s1">@satir.Bolum</td>
+                    <td class="sabit s2 orta">@(satir.Bos ? "" : satir.Sinif.ToString())</td>
+                    <td class="sabit s3">@satir.Tarih</td>
+                    <td class="sabit s4 orta">@satir.Saat</td>
+                    <td class="sabit s5" title="@satir.Atama?.OgretimElemani">@satir.Ders</td>
+                    <td class="sabit s6 son-sabit sayi">@satir.Kontenjan</td>
+                    @for (int c = 0; c < Matris.Salonlar.Count; c++)
+                    {
+                        @HucreCiz(r, c, satir, Matris.Salonlar[c])
+                    }
+                </tr>
+            </Virtualize>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SalonMatrisi Matris { get; set; }
+
+    /// <summary>Gösterilecek (süzülmüş) satırlar.</summary>
+    [Parameter, EditorRequired] public List<MatrisSatiri> Satirlar { get; set; }
+
+    [Parameter] public double YaziBoyutu { get; set; } = 9;
+    [Parameter] public EventCallback<int> YakinlastirmaIstendi { get; set; }
+
+    private readonly string _kapId = $"mk-{Guid.NewGuid():N}";
+    private ElementReference _tablo;
+    private DotNetObjectReference<SalonMatrisiBileseni> _ref;
+    private List<(int Sira, MatrisSatiri Satir)> _satirlar = new();
+
+    private (int R, int C) _aktif = (0, 0);
+    private (int R, int C)? _duzenlenen;
+    private string _duzenlemeMetni;
+    private bool _yazarakAcildi, _odaklanacak, _kutuyaOdaklanacak;
+
+    private string Olcek => (YaziBoyutu / 9).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Satır yüksekliği (px): sanal kaydırmanın varsaydığı sabit yükseklik, yazı boyutuyla ölçeklenir.</summary>
+    private int SatirYuksekligi => (int)Math.Round(28 * YaziBoyutu / 9);
+
+    protected override void OnParametersSet()
+    {
+        _satirlar = Satirlar.Select((s, i) => (i, s)).ToList();
+        _aktif = (Math.Clamp(_aktif.R, 0, Math.Max(0, _satirlar.Count - 1)), Math.Clamp(_aktif.C, 0, Math.Max(0, Matris.Salonlar.Count - 1)));
+        if (_duzenlenen is { } d && (d.R >= _satirlar.Count || d.C >= Matris.Salonlar.Count)) _duzenlenen = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool ilk)
+    {
+        try
+        {
+            if (ilk)
+            {
+                _ref = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("sinavProgrami.izgara.bagla", _tablo, _ref);
+            }
+            if (_kutuyaOdaklanacak && _duzenlenen is { } d)
+            {
+                _kutuyaOdaklanacak = false;
+                await JS.InvokeVoidAsync("sinavProgrami.izgara.kutuyaOdaklan", HucreId(d.R, d.C));
+            }
+            else if (_odaklanacak && _duzenlenen == null)
+            {
+                _odaklanacak = false;
+                await JS.InvokeVoidAsync("sinavProgrami.izgara.odakla", HucreId(_aktif.R, _aktif.C), _kapId, _aktif.R, SatirYuksekligi);
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public void Dispose() => _ref?.Dispose();
+
+    private static string HucreId(int r, int c) => $"mh-{r}-{c}";
+
+    private RenderFragment HucreCiz(int r, int c, MatrisSatiri satir, Salon salon) => __builder =>
+    {
+        var sa = SalonServisi.SalonAtamasi(satir.Atama, salon.SalonKodu);
+        bool duzenleniyor = _duzenlenen is { } d && d.R == r && d.C == c;
+        bool asim = sa != null && sa.AtananOgrenciSayisi > salon.Kapasite;
+        string sinif = (sa != null ? "dolu " : "") + (asim ? "asim " : "") + (_aktif == (r, c) ? "aktif " : "")
+                       + (duzenleniyor ? "duzenleniyor" : "");
+        string baslik = satir.Bos ? null
+            : sa == null ? $"{salon.SalonKodu} — boş (öğrenci sayısı yazarak atayın)"
+            : $"{salon.SalonKodu}: {sa.AtananOgrenciSayisi}/{salon.Kapasite} öğrenci" +
+              (string.IsNullOrWhiteSpace(sa.Sube) ? "" : $" · Şube {sa.Sube}") +
+              (string.IsNullOrWhiteSpace(sa.GozetmenAdSoyad) ? "" : $" · Gözetmen: {sa.GozetmenAdSoyad}") +
+              (asim ? " · ⚠ kapasite aşıldı" : "");
+
+        <td id="@HucreId(r, c)" class="@sinif" data-r="@r" data-c="@c" tabindex="@(_aktif == (r, c) ? 0 : -1)" title="@baslik" role="gridcell">
+            @if (duzenleniyor)
+            {
+                <input class="hucre-kutusu sayi" value="@_duzenlemeMetni" aria-label="@($"{salon.SalonKodu} öğrenci sayısı")" inputmode="numeric"
+                       autocomplete="off" spellcheck="false" data-ilk="@(_yazarakAcildi ? "son" : "sec")"
+                       @oninput="e => _duzenlemeMetni = e.Value?.ToString()" @onkeydown="e => KutudaTus(e, satir, salon)"
+                       @onkeydown:stopPropagation="true" @onblur="() => Kaydet(satir, salon)" />
+            }
+            else if (sa != null)
+            {
+                @(string.IsNullOrWhiteSpace(sa.Sube) ? sa.AtananOgrenciSayisi.ToString() : sa.Sube)
+            }
+        </td>
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    // FARE / KLAVYE (app.js → izgara.bagla)
+    // ═══════════════════════════════════════════════════════════════
+
+    [JSInvokable]
+    public void Tikla(int r, int c, bool ctrl, bool shift)
+    {
+        if (!GecerliMi(r, c)) return;
+        _aktif = (r, c);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void CiftTikla(int r, int c)
+    {
+        if (!GecerliMi(r, c)) return;
+        _aktif = (r, c);
+        Duzenle(r, c, null);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void Tus(int r, int c, string tus, bool ctrl, bool shift)
+    {
+        if (!GecerliMi(r, c)) return;
+        _aktif = (r, c);
+        int sonSutun = Matris.Salonlar.Count - 1;
+        switch (tus)
+        {
+            case "ArrowUp": Git(r - 1, c); break;
+            case "ArrowDown": Git(r + 1, c); break;
+            case "ArrowLeft": Git(r, c - 1); break;
+            case "ArrowRight": Git(r, c + 1); break;
+            case "Home": Git(ctrl ? 0 : r, 0); break;
+            case "End": Git(ctrl ? _satirlar.Count - 1 : r, sonSutun); break;
+            case "PageUp": Git(r - 15, c); break;
+            case "PageDown": Git(r + 15, c); break;
+            case "Enter":
+            case "F2":
+                Duzenle(r, c, null);
+                break;
+            case "Delete":
+            case "Backspace":
+                Sil(r, c);
+                break;
+            default:
+                if (tus.Length == 1 && char.IsDigit(tus[0]) && !ctrl) Duzenle(r, c, tus);
+                break;
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task Tekerlek(int yon) => YakinlastirmaIstendi.InvokeAsync(yon);
+
+    private bool GecerliMi(int r, int c) => r >= 0 && r < _satirlar.Count && c >= 0 && c < Matris.Salonlar.Count;
+
+    private void Git(int r, int c)
+    {
+        _aktif = (Math.Clamp(r, 0, _satirlar.Count - 1), Math.Clamp(c, 0, Matris.Salonlar.Count - 1));
+        _odaklanacak = true;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // DÜZENLEME
+    // ═══════════════════════════════════════════════════════════════
+
+    private void Duzenle(int r, int c, string ilkMetin)
+    {
+        var satir = _satirlar[r].Satir;
+        if (satir.Bos) return;
+        var sa = SalonServisi.SalonAtamasi(satir.Atama, Matris.Salonlar[c].SalonKodu);
+        _yazarakAcildi = ilkMetin != null;
+        _duzenlemeMetni = ilkMetin ?? sa?.AtananOgrenciSayisi.ToString() ?? "";
+        _duzenlenen = (r, c);
+        _kutuyaOdaklanacak = true;
+    }
+
+    private void DuzenlemedenCik()
+    {
+        _duzenlenen = null;
+        _odaklanacak = true;
+    }
+
+    private void KutudaTus(KeyboardEventArgs e, MatrisSatiri satir, Salon salon)
+    {
+        if (e.Key == "Enter") Kaydet(satir, salon);
+        else if (e.Key == "Escape") DuzenlemedenCik();
+    }
+
+    private void Kaydet(MatrisSatiri satir, Salon salon)
+    {
+        if (_duzenlenen == null) return;
+        string metin = _duzenlemeMetni?.Trim() ?? "";
+        DuzenlemedenCik();
+
+        var once = SalonServisi.SalonAtamasi(satir.Atama, salon.SalonKodu);
+        if (metin == (once?.AtananOgrenciSayisi.ToString() ?? "")) return;
+        if (once != null && (metin == "" || metin == "0")) { Sil(satir, salon, once); return; }
+
+        string hata = Servis.MatrisHucresiniDegistir(satir.Atama, salon, metin);
+        if (hata != null) Bildirim.Add(hata, Severity.Warning);
+    }
+
+    private void Sil(int r, int c)
+    {
+        var satir = _satirlar[r].Satir;
+        var salon = Matris.Salonlar[c];
+        var sa = SalonServisi.SalonAtamasi(satir.Atama, salon.SalonKodu);
+        if (sa != null) Sil(satir, salon, sa);
+    }
+
+    /// <summary>Salon atamasını siler; bildirimdeki "Geri al" aynı atamayı (şube ve gözetmeniyle) geri koyar.</summary>
+    private void Sil(MatrisSatiri satir, Salon salon, SalonAtama sa)
+    {
+        Servis.MatrisHucresiniDegistir(satir.Atama, salon, "");
+        var atama = satir.Atama;
+        Bildirim.Add($"{salon.SalonKodu} ataması silindi ({atama.DersAdi} — Şube {atama.Sube}).", Severity.Info, o =>
+        {
+            o.Action = "Geri al";
+            o.ActionColor = Color.Primary;
+            o.OnClick = _ => { Servis.SalonAtamasiniGeriKoy(atama, sa); return Task.CompletedTask; };
+        });
+    }
+}

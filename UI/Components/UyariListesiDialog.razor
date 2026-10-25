@@ -1,0 +1,59 @@
+@inject IJSRuntime JS
+@inject ISnackbar Bildirim
+
+@* Okuma sırasında atlanan satırlar / uyarılar (eski "Atlanan Satırlar" penceresi): aranabilir, kopyalanabilir *@
+<MudDialog ContentClass="uyari-listesi-icerigi">
+    <TitleContent>
+        <div class="onay-basligi">
+            <MudIcon Icon="@Icons.Material.Outlined.WarningAmber" Color="Color.Warning" />
+            <span>@Baslik (@Uyarilar.Count adet)</span>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(Aciklama))
+        {
+            <p class="uyari-aciklamasi">@Aciklama</p>
+        }
+        <MudTextField T="string" @bind-Value="_filtre" Immediate="true" Placeholder="Uyarılarda ara…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" Class="mb-2" />
+        <ol class="uyari-listesi">
+            @foreach (var (metin, sira) in Gorunen())
+            {
+                <li value="@sira">@metin</li>
+            }
+        </ol>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.ContentCopy" OnClick="Kopyala">Tümünü kopyala</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => Diyalog.Close()">Kapat</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Diyalog { get; set; }
+
+    [Parameter] public string Baslik { get; set; } = "Uyarılar";
+    [Parameter] public string Aciklama { get; set; }
+    [Parameter] public List<string> Uyarilar { get; set; } = new();
+
+    private string _filtre;
+
+    private IEnumerable<(string Metin, int Sira)> Gorunen()
+        => Uyarilar.Select((m, i) => (m, i + 1))
+            .Where(x => string.IsNullOrWhiteSpace(_filtre) ||
+                        CultureInfo.GetCultureInfo("tr-TR").CompareInfo.IndexOf(x.m, _filtre.Trim(), CompareOptions.IgnoreCase) >= 0);
+
+    private async Task Kopyala()
+    {
+        string metin = string.Join(Environment.NewLine, Uyarilar.Select((m, i) => $"{i + 1,4}. {m}"));
+        try
+        {
+            await JS.InvokeVoidAsync("sinavProgrami.panoyaKopyala", metin);
+            Bildirim.Add($"{Uyarilar.Count} satır panoya kopyalandı.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Bildirim.Add($"Kopyalanamadı: {ex.Message}", Severity.Warning);
+        }
+    }
+}

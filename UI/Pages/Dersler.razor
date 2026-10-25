@@ -1,0 +1,133 @@
+@page "/dersler"
+@inherits DurumaBagliBilesen
+@inject DersServisi Servis
+@inject OrtakDersServisi Ortak
+@inject IDosyaServisi Dosya
+@inject IsYurutucu IsYurutucu
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Dersler</PageTitle>
+
+<SayfaBasligi AdimNo="3" Baslik="Dersler" Aciklama="@IsAkisi.Adim(3).Aciklama">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="SinavListesiYukleAsync">
+        Sınav listesi yükle
+    </MudButton>
+</SayfaBasligi>
+
+@if (Durum.Dersler.Count > 0)
+{
+    <div class="bilgi-seridi">
+        <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" />
+        <span>@IsAkisi.Ozet(Durum, 3)</span>
+        @if (Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.SinavListesi, out var sonDosya))
+        {
+            <span class="ayrac">·</span>
+            <span title="@sonDosya">Son yüklenen: @System.IO.Path.GetFileName(sonDosya)</span>
+        }
+    </div>
+}
+
+<MudTabs @bind-ActivePanelIndex="_sekme" Elevation="0" Rounded="false" ApplyEffectsToContainer="true"
+         TabPanelsClass="ders-sekmeleri" Class="ders-sekme-kabi" KeepPanelsAlive="false">
+    <MudTabPanel Text="@SayacliAd("Ders listesi", Durum.Dersler.Count)" Icon="@Icons.Material.Outlined.MenuBook">
+        <DersListesiSekmesi YuklemeIstendi="SinavListesiYukleAsync" />
+    </MudTabPanel>
+    <MudTabPanel Text="@SayacliAd("Uygulamalı dersler", Durum.UygulamaliDersler.Count)" Icon="@Icons.Material.Outlined.Science">
+        <UygulamaliSekmesi />
+    </MudTabPanel>
+    <MudTabPanel Text="Hata oranı" Icon="@Icons.Material.Outlined.Percent">
+        <HataOraniSekmesi />
+    </MudTabPanel>
+    <MudTabPanel Text="Ortak dersler" Icon="@Icons.Material.Outlined.Hub">
+        <OrtakDerslerSekmesi />
+    </MudTabPanel>
+    <MudTabPanel Text="@SayacliAd("Havuzlar", Durum.SablonHavuzlari.Count)" Icon="@Icons.Material.Outlined.Groups">
+        <HavuzlarSekmesi />
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private int _sekme;
+
+    private static string SayacliAd(string ad, int sayi) => sayi > 0 ? $"{ad} ({sayi})" : ad;
+
+    /// <summary>
+    /// Sınav listesi (ham ders listesi) Excel'ini okur; bölüm özetini gösterip onay alır,
+    /// onaylanırsa mevcut liste ve şablon sonrası sıfırlanır (eski BtnExcelImport_Click).
+    /// </summary>
+    private async Task SinavListesiYukleAsync()
+    {
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.SinavListesi, out var sonYol);
+        string yol = await Dosya.AcilacakDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = SonDosyaTurleri.SinavListesi,
+            Baslik = "Sınav Listesi Excel'ini Seçin (ham ders listesi)",
+            Filtre = "Excel Dosyası (*.xlsx)|*.xlsx|Tüm Dosyalar (*.*)|*.*",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        SinavListesiOnizlemesi onizleme;
+        try
+        {
+            onizleme = await IsYurutucu.CalistirAsync("Ders listesi okunuyor…", () => DersServisi.Onizle(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Sınav listesi okunamadı", ex);
+            Durum.DurumYaz("❌ Ders listesi yüklemesi başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Ders listesi yükleme hatası:\n\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        if (onizleme.Bos)
+        {
+            Durum.DurumYaz("❌ Hiç ders yüklenemedi.", DurumTuru.Hata);
+            Durum.Bildir();
+            string mesaj = "Excel'den hiç ders okunamadı.\n(Bölüm, Dersin Kodu, Ders Adı, Şube, Öğrenci Sayısı sütunları beklenir.)";
+            if (onizleme.Uyarilar.Count > 0) mesaj += "\n\n" + string.Join("\n", onizleme.Uyarilar.Take(15));
+            await Diyalog.BilgiAsync("Ders Okunamadı", mesaj, DurumTuru.Uyari);
+            return;
+        }
+
+        bool onay = await Diyalog.OnaylaAsync("Ders Listesi Yükleme Onayı", null, "Listeyi yükle", "Vazgeç",
+            icerik: OnizlemeOzeti(onizleme), tehlikeli: Durum.Dersler.Count > 0 || Durum.SablonSonuclari != null);
+        if (!onay) return;
+
+        Durum.SonDosyalar[SonDosyaTurleri.SinavListesi] = yol;
+        Servis.SinavListesiniUygula(onizleme);
+        _sekme = 0;
+        Bildirim.Add($"{onizleme.SubeSayisi} şube yüklendi.", Severity.Success);
+
+        if (onizleme.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Yükleme Notları", onizleme.Uyarilar,
+                $"{onizleme.Uyarilar.Count} satır atlandı ya da uyarı verdi. Liste yüklendi; aşağıdaki satırları kontrol etmeniz önerilir.");
+    }
+
+    private RenderFragment OnizlemeOzeti(SinavListesiOnizlemesi o) => @<div class="onizleme-ozeti">
+        <p>Ders listesi okundu: <b>@o.SubeSayisi şube</b>, <b>@o.KodSayisi farklı ders kodu</b>.</p>
+        <table class="tablo ozet-tablosu">
+            <thead><tr><th>Bölüm</th><th class="sayisal sag">Ders kodu</th><th class="sayisal sag">Şube</th></tr></thead>
+            <tbody>
+                @foreach (var b in o.Bolumler)
+                {
+                    <tr><td>@b.Bolum</td><td class="sayisal sag">@b.KodSayisi</td><td class="sayisal sag">@b.SubeSayisi</td></tr>
+                }
+            </tbody>
+        </table>
+        @if (o.Uyarilar.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@o.Uyarilar.Count satır atlandı ya da uyarı verdi (yüklemeden sonra listelenir).</MudAlert>
+        }
+        @if (Durum.Dersler.Count > 0 || Durum.SablonSonuclari != null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                Mevcut ders listesi ve varsa şablon / salon yerleşimi temizlenecek. Takvim, hata oranları, havuzlar ve ortak ders
+                seçimi korunur; uygulamalı işaretleri yeni listede bulunan dersler için kalır.
+            </MudAlert>
+        }
+        <p class="mt-3">Bu ders listesi yüklensin mi?</p>
+    </div>;
+}

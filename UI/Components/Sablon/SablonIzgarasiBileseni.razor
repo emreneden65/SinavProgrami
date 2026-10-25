@@ -1,0 +1,417 @@
+@implements IDisposable
+@inject SablonServisi Servis
+@inject IJSRuntime JS
+@inject ISnackbar Bildirim
+
+@* Şablon ızgarası (eski dgvSablon): gün bantları × (Bölüm · Sınıf · Ders adı · A · B · C · D), satırlar saat × bölüm.
+   Excel gibi: tıkla = seç · Ctrl/Shift ile çoklu seçim · oklar / Tab ile gezinme · Enter, F2, çift tıklama ya da
+   yazmaya başlamak = düzenle · Esc = vazgeç · Delete = dersi çıkar / notu sil · Ctrl + tekerlek = yakınlaştır.
+   Fare ve klavye olayları tablo düzeyinde tek bir JS dinleyicisiyle toplanır (hücre başına olay bağlanmaz). *@
+<div class="sablon-kabi" style="@($"--olcek: {(YaziBoyutu / 9).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}")">
+    <table @ref="_tablo" class="sablon-izgarasi" role="grid" aria-label="Şablon ızgarası" aria-rowcount="@(Izgara.Satirlar.Count + 2)">
+        <colgroup>
+            <col class="c-saat" />
+            @for (int g = 0; g < Izgara.Gunler.Count; g++)
+            {
+                <col class="c-bolum" /><col class="c-sinif" /><col class="c-ders" /><col class="c-sube" /><col class="c-sube" /><col class="c-sube" /><col class="c-not" />
+            }
+        </colgroup>
+        <thead>
+            <tr class="bant">
+                <th class="saat-basligi" rowspan="2" scope="col">Saat</th>
+                @foreach (var gun in Izgara.Gunler)
+                {
+                    <th class="gun-bandi" colspan="7" scope="colgroup">@SablonServisi.GunBasligi(gun)</th>
+                }
+            </tr>
+            <tr class="alt-baslik">
+                @for (int g = 0; g < Izgara.Gunler.Count; g++)
+                {
+                    <th class="gun-basi" scope="col">Bölüm</th>
+                    <th scope="col">Sınıf</th>
+                    <th scope="col" class="sol">Ders adı</th>
+                    <th scope="col" title="1. şubenin kontenjanı">A</th>
+                    <th scope="col" title="2. şubenin kontenjanı">B</th>
+                    <th scope="col" title="3. şubenin kontenjanı">C</th>
+                    <th scope="col" title="Serbest not (eski INT)">D</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var satir in Izgara.Satirlar)
+            {
+                <tr @key="satir.Sira" class="@(satir.SaatBlokSira % 2 == 0 ? "blok-a" : "blok-b") @(satir.SaatinIlkSatiri ? "blok-basi" : "")">
+                    @if (satir.SaatinIlkSatiri)
+                    {
+                        <th class="saat" rowspan="@satir.SaatBlokSatirSayisi" scope="rowgroup">@satir.Saat</th>
+                    }
+                    @for (int g = 0; g < satir.Hucreler.Length; g++)
+                    {
+                        var hucre = satir.Hucreler[g];
+                        var ihlaller = GorunenIhlaller(hucre);
+                        string ihlalMetni = ihlaller.Count == 0 ? null : "⚠ " + string.Join("\n⚠ ", ihlaller.Select(i => i.Mesaj));
+                        for (int k = 0; k < 7; k++)
+                        {
+                            @HucreCiz(satir, g, k, hucre, ihlalMetni)
+                        }
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SablonIzgarasi Izgara { get; set; }
+
+    /// <summary>Gizlenen ihlal türleri: bu türlerin ihlalleri hücrelerde gösterilmez.</summary>
+    [Parameter] public IReadOnlySet<IhlalTuru> GizliTurler { get; set; }
+
+    /// <summary>Yazı boyutu (pt); eski tablodaki gibi 6–16, varsayılan 9.</summary>
+    [Parameter] public double YaziBoyutu { get; set; } = 9;
+
+    /// <summary>Ctrl + tekerlek: +1 büyüt, -1 küçült.</summary>
+    [Parameter] public EventCallback<int> YakinlastirmaIstendi { get; set; }
+
+    private const int SutunSayisi = 7;   // Bölüm · Sınıf · Ders · A · B · C · D
+    private const int DersSutunu = 2, NotSutunu = 6;
+
+    private ElementReference _tablo;
+    private DotNetObjectReference<SablonIzgarasiBileseni> _ref;
+    private bool _odaklanacak, _kutuyaOdaklanacak;
+
+    // Seçim: etkin hücre, Shift ile genişletmenin çapası ve seçili hücreler (satır, sütun)
+    private (int R, int C) _aktif = (0, 2), _capa = (0, 2);
+    private readonly HashSet<(int R, int C)> _secim = new() { (0, 2) };
+
+    // Açık düzenleyici (yalnızca bir hücrede)
+    private (int R, int C)? _duzenlenen;
+    private string _duzenlemeMetni, _ilkMetin;
+
+    private int Sutunlar => Izgara.Gunler.Count * SutunSayisi;
+
+    protected override void OnParametersSet()
+    {
+        // Şablon değişince satır sayısı değişebilir: etkin hücre ve seçim tablo içinde kalsın
+        int sonSatir = Math.Max(0, Izgara.Satirlar.Count - 1), sonSutun = Math.Max(0, Sutunlar - 1);
+        _aktif = (Math.Min(_aktif.R, sonSatir), Math.Min(_aktif.C, sonSutun));
+        _capa = (Math.Min(_capa.R, sonSatir), Math.Min(_capa.C, sonSutun));
+        _secim.RemoveWhere(h => h.R > sonSatir || h.C > sonSutun);
+        if (_duzenlenen is { } d && (d.R > sonSatir || d.C > sonSutun)) _duzenlenen = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool ilk)
+    {
+        try
+        {
+            if (ilk)
+            {
+                _ref = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("sinavProgrami.izgara.bagla", _tablo, _ref);
+            }
+            if (_kutuyaOdaklanacak && _duzenlenen is { } d)
+            {
+                _kutuyaOdaklanacak = false;
+                await JS.InvokeVoidAsync("sinavProgrami.izgara.kutuyaOdaklan", HucreId(d.R, d.C));
+            }
+            else if (_odaklanacak && _duzenlenen == null)
+            {
+                _odaklanacak = false;
+                await JS.InvokeVoidAsync("sinavProgrami.izgara.odakla", HucreId(_aktif.R, _aktif.C));
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public void Dispose() => _ref?.Dispose();
+
+    // ═══════════════════════════════════════════════════════════════
+    // ÇİZİM
+    // ═══════════════════════════════════════════════════════════════
+
+    private static string HucreId(int r, int c) => $"sh-{r}-{c}";
+
+    private List<SablonIhlali> GorunenIhlaller(SablonHucresi hucre)
+        => GizliTurler == null || GizliTurler.Count == 0 ? hucre.Ihlaller
+            : hucre.Ihlaller.Where(i => !GizliTurler.Contains(i.Tur)).ToList();
+
+    private RenderFragment HucreCiz(SablonSatiri satir, int g, int k, SablonHucresi hucre, string ihlalMetni) => __builder =>
+    {
+        int r = satir.Sira, c = g * SutunSayisi + k;
+        bool duzenleniyor = _duzenlenen is { } d && d.R == r && d.C == c;
+        bool ihlalli = ihlalMetni != null && k >= 1 && k <= 5;
+        var grup = hucre.Grup;
+
+        string sinif = (k == 0 ? "gun-basi " : "")
+                     + (k == DersSutunu ? "ders " : k == NotSutunu ? "not " : k == 0 || k == 1 ? "orta " : "sayi ")
+                     + (!hucre.Acik ? "kapali " : "")
+                     + (ihlalli ? "ihlal " : "")
+                     + (_secim.Contains((r, c)) ? "secili " : "")
+                     + (_aktif == (r, c) ? "aktif " : "")
+                     + (duzenleniyor ? "duzenleniyor" : "");
+
+        string baslik = null;
+        string deger = null;
+        if (!hucre.Acik)
+            baslik = "Bu gün bu saat takvimde seçili değil";
+        else
+        {
+            switch (k)
+            {
+                case 0:
+                    deger = satir.BolumKisa;
+                    baslik = satir.BolumTam;
+                    break;
+                case 1:
+                    deger = hucre.Ilk?.SinifSeviyesi.ToString();
+                    break;
+                case DersSutunu:
+                    deger = hucre.Ilk?.DersAdi;
+                    baslik = grup == null ? "Boş hücre — çift tıklayıp ya da yazmaya başlayıp ders seçin" : $"{grup[0].DersAdi} — {grup.Count} şube";
+                    break;
+                case NotSutunu:
+                    deger = hucre.Not;
+                    baslik = "Serbest not (eski INT)";
+                    break;
+                default:
+                    int s = k - 3;
+                    if (grup != null && s < grup.Count)
+                    {
+                        deger = grup[s].Kontenjan.ToString();
+                        baslik = $"Şube {grup[s].Sube} — kontenjan (düzenlenebilir)";
+                        if (s == 2 && grup.Count > 3) baslik += $" | ⚠ +{grup.Count - 3} şube daha var (C sütununa sığmadı)";
+                    }
+                    break;
+            }
+        }
+        if (ihlalli) baslik = ihlalMetni + (baslik != null ? "\n\n" + baslik : "");
+
+        <td id="@HucreId(r, c)" class="@sinif" data-r="@r" data-c="@c" tabindex="@(_aktif == (r, c) ? 0 : -1)" title="@baslik"
+            role="gridcell" aria-selected="@(_secim.Contains((r, c)) ? "true" : "false")">
+            @if (duzenleniyor && k == DersSutunu)
+            {
+                <DersSecici Secenekler="@Servis.DersSecenekleri(satir.BolumTam)" MevcutDers="@hucre.Ilk?.DersAdi"
+                            MevcutSinif="@(hucre.Ilk?.SinifSeviyesi ?? 0)" YerBul="@((ad, sn) => YerMetni(satir.BolumTam, ad, sn))"
+                            IlkMetin="@_ilkMetin" Secildi="@(secim => DersSecildi(satir, g, secim))" Vazgecildi="DuzenlemedenCik" />
+            }
+            else if (duzenleniyor)
+            {
+                <input class="hucre-kutusu @(k == NotSutunu ? "" : "sayi")" value="@_duzenlemeMetni" aria-label="@(k == NotSutunu ? "Not" : "Kontenjan")"
+                       inputmode="@(k == NotSutunu ? "text" : "numeric")" autocomplete="off" spellcheck="false" data-ilk="@(_ilkMetin != null ? "son" : "sec")"
+                       @oninput="e => _duzenlemeMetni = e.Value?.ToString()" @onkeydown="e => KutudaTus(e, satir, g, k)"
+                       @onkeydown:stopPropagation="true" @onblur="() => Kaydet(satir, g, k)" />
+            }
+            else if (k == DersSutunu && grup != null && grup.Count > 3)
+            {
+                <span class="ders-adi">@deger</span><span class="ek-sube">+@(grup.Count - 3)</span>
+            }
+            else
+            {
+                @deger
+            }
+        </td>
+    };
+
+    private string YerMetni(string bolumTam, string dersAdi, int sinif)
+    {
+        var slotlar = Servis.DersinSlotlari(bolumTam, dersAdi, sinif);
+        return slotlar.Count == 0 ? null : string.Join(", ", slotlar.Select(s => $"{s.Gun:dd.MM} {s.Saat}"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FARE / KLAVYE (app.js → izgara.bagla)
+    // ═══════════════════════════════════════════════════════════════
+
+    [JSInvokable]
+    public void Tikla(int r, int c, bool ctrl, bool shift)
+    {
+        if (!GecerliMi(r, c)) return;
+        if (shift) SecimiGenislet((r, c));
+        else if (ctrl)
+        {
+            if (!_secim.Remove((r, c))) _secim.Add((r, c));
+            _aktif = _capa = (r, c);
+        }
+        else TekSec((r, c));
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void CiftTikla(int r, int c)
+    {
+        if (!GecerliMi(r, c)) return;
+        TekSec((r, c));
+        Duzenle(r, c, null);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task Tus(int r, int c, string tus, bool ctrl, bool shift)
+    {
+        if (!GecerliMi(r, c)) return;
+        _aktif = (r, c);
+        switch (tus)
+        {
+            case "ArrowUp": Git(r - 1, c, shift); break;
+            case "ArrowDown": Git(r + 1, c, shift); break;
+            case "ArrowLeft": Git(r, c - 1, shift); break;
+            case "ArrowRight": Git(r, c + 1, shift); break;
+            case "Home": Git(ctrl ? 0 : r, ctrl ? 0 : c - c % SutunSayisi, shift); break;
+            case "End": Git(ctrl ? Izgara.Satirlar.Count - 1 : r, ctrl ? Sutunlar - 1 : c - c % SutunSayisi + SutunSayisi - 1, shift); break;
+            case "PageUp": Git(r - 10, c, shift); break;
+            case "PageDown": Git(r + 10, c, shift); break;
+            case "Enter":
+            case "F2":
+                Duzenle(r, c, null);
+                break;
+            case "Backspace":
+                Duzenle(r, c, "");
+                break;
+            case "Delete":
+                await SecilenleriSilAsync();
+                break;
+            default:
+                if (tus.Length == 1 && !ctrl) Duzenle(r, c, tus);
+                break;
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task Tekerlek(int yon) => YakinlastirmaIstendi.InvokeAsync(yon);
+
+    /// <summary>İhlal listesinden gelen "hücreye git": hücre seçilir, görünür alana kaydırılır ve odaklanır.</summary>
+    public async Task HucreyeGitAsync(int r, int gunIdx)
+    {
+        int c = gunIdx * SutunSayisi + DersSutunu;
+        if (!GecerliMi(r, c)) return;
+        _duzenlenen = null;
+        TekSec((r, c));
+        StateHasChanged();
+        await Task.Yield();
+        try { await JS.InvokeVoidAsync("sinavProgrami.izgara.gozeGetir", HucreId(r, c)); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private bool GecerliMi(int r, int c) => r >= 0 && r < Izgara.Satirlar.Count && c >= 0 && c < Sutunlar;
+
+    private void TekSec((int R, int C) h)
+    {
+        _secim.Clear();
+        _secim.Add(h);
+        _aktif = _capa = h;
+    }
+
+    private void Git(int r, int c, bool genislet)
+    {
+        r = Math.Clamp(r, 0, Izgara.Satirlar.Count - 1);
+        c = Math.Clamp(c, 0, Sutunlar - 1);
+        if (genislet) SecimiGenislet((r, c));
+        else TekSec((r, c));
+        _odaklanacak = true;
+    }
+
+    /// <summary>Shift: çapadan hedefe kadar dikdörtgen seçim.</summary>
+    private void SecimiGenislet((int R, int C) hedef)
+    {
+        _secim.Clear();
+        for (int r = Math.Min(_capa.R, hedef.R); r <= Math.Max(_capa.R, hedef.R); r++)
+            for (int c = Math.Min(_capa.C, hedef.C); c <= Math.Max(_capa.C, hedef.C); c++)
+                _secim.Add((r, c));
+        _aktif = hedef;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // DÜZENLEME
+    // ═══════════════════════════════════════════════════════════════
+
+    private (SablonSatiri Satir, int Gun, int K, SablonHucresi Hucre) Coz(int r, int c)
+    {
+        var satir = Izgara.Satirlar[r];
+        int g = c / SutunSayisi;
+        return (satir, g, c % SutunSayisi, satir.Hucreler[g]);
+    }
+
+    private static bool DuzenlenebilirMi(int k, SablonHucresi hucre)
+        => hucre.Acik && (k == DersSutunu || k == NotSutunu || (k >= 3 && k <= 5 && hucre.Grup != null && k - 3 < hucre.Grup.Count));
+
+    /// <summary>Hücrede düzenleyiciyi açar; ilkMetin doluysa (yazmaya başlanarak açıldıysa) değer onunla başlar.</summary>
+    private void Duzenle(int r, int c, string ilkMetin)
+    {
+        var (_, _, k, hucre) = Coz(r, c);
+        if (!DuzenlenebilirMi(k, hucre))
+        {
+            if (ilkMetin == null && hucre.Acik && k >= 3 && k <= 5)
+                Bildirim.Add("Bu hücrede düzenlenecek bir şube yok. Önce 'Ders adı' sütunundan ders yerleştirin.", Severity.Info);
+            return;
+        }
+        if (k >= 3 && k <= 5 && ilkMetin != null && ilkMetin.Length == 1 && !char.IsDigit(ilkMetin[0])) return;
+
+        _ilkMetin = ilkMetin;
+        _duzenlemeMetni = ilkMetin ?? (k == NotSutunu ? hucre.Not : k == DersSutunu ? null : hucre.Grup[k - 3].Kontenjan.ToString());
+        _duzenlenen = (r, c);
+        _kutuyaOdaklanacak = k != DersSutunu;   // ders seçici kendi kutusuna odaklanır
+    }
+
+    private void DuzenlemedenCik()
+    {
+        _duzenlenen = null;
+        _odaklanacak = true;
+    }
+
+    private void KutudaTus(KeyboardEventArgs e, SablonSatiri satir, int g, int k)
+    {
+        if (e.Key == "Enter") Kaydet(satir, g, k);
+        else if (e.Key == "Escape") DuzenlemedenCik();
+    }
+
+    private void Kaydet(SablonSatiri satir, int g, int k)
+    {
+        if (_duzenlenen == null) return;
+        string metin = _duzenlemeMetni;
+        DuzenlemedenCik();
+
+        if (k == NotSutunu)
+        {
+            if ((metin?.Trim() ?? "") != (satir.Hucreler[g].Not ?? "")) Servis.NotDegistir(satir, g, metin);
+            return;
+        }
+        string hata = Servis.KontenjanDegistir(satir, g, k - 3, metin);
+        if (hata != null) Bildirim.Add(hata, Severity.Warning);
+    }
+
+    private void DersSecildi(SablonSatiri satir, int g, string secim)
+    {
+        DuzenlemedenCik();
+        string hata = Servis.DersSec(satir, g, Izgara.Gunler[g], secim);
+        if (hata != null) Bildirim.Add(hata, Severity.Warning);
+    }
+
+    /// <summary>Delete: seçili ders hücrelerindeki dersler şablondan çıkar, not hücreleri temizlenir (geri alınabilir).</summary>
+    private Task SecilenleriSilAsync()
+    {
+        var dersHucreleri = new List<(SablonSatiri, int)>();
+        var notlar = new List<(SablonSatiri Satir, int Gun)>();
+        foreach (var (r, c) in _secim)
+        {
+            if (!GecerliMi(r, c)) continue;
+            var (satir, g, k, hucre) = Coz(r, c);
+            if (k == DersSutunu && hucre.Grup != null) dersHucreleri.Add((satir, g));
+            else if (k == NotSutunu && !string.IsNullOrEmpty(hucre.Not)) notlar.Add((satir, g));
+        }
+
+        foreach (var (satir, g) in notlar) Servis.NotDegistir(satir, g, "");
+        var cikan = Servis.HucreleriBosalt(dersHucreleri);
+        if (cikan.Count > 0)
+        {
+            string ders = cikan.Select(a => a.DersAdi).Distinct().Count() == 1 ? $"'{cikan[0].DersAdi}'" : $"{cikan.Count} şube";
+            Bildirim.Add($"{ders} şablondan çıkarıldı.", Severity.Info, o =>
+            {
+                o.Action = "Geri al";
+                o.ActionColor = Color.Primary;
+                o.OnClick = _ => { Servis.GeriEkle(cikan); return Task.CompletedTask; };
+            });
+        }
+        return Task.CompletedTask;
+    }
+}

@@ -1,0 +1,345 @@
+@page "/gozetmenler"
+@inherits DurumaBagliBilesen
+@inject GozetmenServisi Servis
+@inject IDosyaServisi Dosya
+@inject IsYurutucu IsYurutucu
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Gözetmenler</PageTitle>
+
+<SayfaBasligi AdimNo="6" Baslik="Gözetmenler" Aciklama="@IsAkisi.Adim(6).Aciklama">
+    <MudButton Variant="@(Durum.GozetmenListesi.Count == 0 ? Variant.Filled : Variant.Outlined)" Color="Color.Primary"
+               StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="ListeYukleAsync">
+        Gözetmen listesi yükle
+    </MudButton>
+</SayfaBasligi>
+
+@if (Durum.GozetmenListesi.Count == 0)
+{
+    <section class="kart">
+        <div class="bos-durum genis">
+            <MudIcon Icon="@Icons.Material.Outlined.Badge" Size="Size.Large" />
+            <div class="bos-durum-basligi">Henüz gözetmen listesi yüklenmedi</div>
+            <div>Fakültenin gözetmen (görevli) listesini yükleyin. Desteklenen biçimler: <i>Bölüm · Kod · Ad Soyad</i> (fakülte GÖREVLER listesi)
+                ya da <i>Ad Soyad · Bölüm</i> (basit liste). Yükledikten sonra tabloda düzeltebilir, gözetmen ekleyip çıkarabilirsiniz.</div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="ListeYukleAsync" Class="mt-2">
+                Gözetmen listesi yükle
+            </MudButton>
+        </div>
+    </section>
+}
+else
+{
+    var gorunen = Gorunen();
+    <div class="ozet-kutulari" aria-label="Gözetmen özeti">
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Gözetmen</div>
+            <div class="ozet-degeri">@Durum.GozetmenListesi.Count</div>
+        </div>
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Bölüm</div>
+            <div class="ozet-degeri">@Durum.GozetmenListesi.Select(g => BolumAdlari.BolumNormAnahtar(g.Bolum)).Distinct().Count()</div>
+        </div>
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Atanan görev</div>
+            <div class="ozet-degeri">@DerslikServisi.Sayi(Durum.GozetmenListesi.Sum(g => g.AtananSinavSayisi))</div>
+        </div>
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Gözetmensiz salon görevi</div>
+            <div class="ozet-degeri">@(Durum.SonSonuclar == null ? "—" : BosGorev().ToString())</div>
+        </div>
+    </div>
+
+    <section class="kart" aria-labelledby="baslik-gozetmen-atama">
+        <div class="kart-basligi">
+            <h2 id="baslik-gozetmen-atama">Gözetmen ataması</h2>
+            @if (Durum.Kilitler.MatrisExport)
+            {
+                <span class="kart-notu">Atama yapıldı — 7. adımda gözetmenli taslağı çıkarın.</span>
+            }
+        </div>
+        <div class="eylem-satiri">
+            <MudButton Variant="@(Durum.Kilitler.MatrisExport ? Variant.Outlined : Variant.Filled)" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Outlined.AssignmentInd" Disabled="@(!Durum.Kilitler.GozetmenAta)" OnClick="AtaAsync">
+                Gözetmenleri ata
+            </MudButton>
+            @if (!Durum.Kilitler.GozetmenAta)
+            {
+                <span class="gd-neden"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" /> Önce 5. adımda salonlu Excel'i geri yükleyin.</span>
+            }
+            else
+            {
+                <span class="eylem-aciklamasi">Her salona bir gözetmen atanır; görev sayısı ağırlıkla orantılıdır, bölüm uyumu ve ortak derslerde esneme gözetilir.</span>
+            }
+        </div>
+        @if (Durum.GozetmenListesi.Any(g => g.AtananSinavSayisi > 0))
+        {
+            <table class="tablo agirlik-ozeti" aria-label="Ağırlığa göre dağılım">
+                <thead><tr><th class="sayisal sag">Ağırlık</th><th class="sayisal sag">Ortalama sınav</th><th class="sayisal sag">Kişi</th></tr></thead>
+                <tbody>
+                    @foreach (var (agirlik, ortalama, kisi) in Servis.AgirlikOzeti())
+                    {
+                        <tr><td class="sayisal sag">@GozetmenServisi.AgirlikMetni(agirlik)</td><td class="sayisal sag">@ortalama.ToString("0.#")</td><td class="sayisal sag">@kisi</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="kart" aria-labelledby="baslik-gozetmen-listesi">
+        <div class="kart-basligi">
+            <h2 id="baslik-gozetmen-listesi">Gözetmen listesi</h2>
+            @if (Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.GozetmenListesi, out var sonDosya))
+            {
+                <span class="kart-notu" title="@sonDosya">Son yüklenen: @System.IO.Path.GetFileName(sonDosya)</span>
+            }
+        </div>
+        <div class="arac-cubugu">
+            <MudTextField T="string" @bind-Value="_arama" Immediate="true" DebounceInterval="150" Placeholder="Ad, kod ya da bölüm ara"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="arama-kutusu" />
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.PersonAdd" OnClick="EkleAsync">Gözetmen ekle</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.DeleteOutline"
+                       Disabled="@(_secili.Count == 0)" OnClick="SecilenleriSilAsync">
+                Seçilenleri sil@(_secili.Count > 0 ? $" ({_secili.Count})" : "")
+            </MudButton>
+            <span class="arac-notu">@gorunen.Count / @Durum.GozetmenListesi.Count gözetmen</span>
+        </div>
+        <div class="tablo-kabi orta" @onkeydown="TabloTusu" tabindex="-1">
+            <table class="tablo yapiskan duzenlenebilir">
+                <thead>
+                    <tr>
+                        <th class="secim-sutunu">
+                            <input type="checkbox" checked="@(gorunen.Count > 0 && gorunen.All(_secili.Contains))"
+                                   @onchange="e => HepsiniSec(gorunen, (bool)e.Value)" aria-label="Görünen tüm gözetmenleri seç" />
+                        </th>
+                        <th>Kod</th>
+                        <th class="genis-sutun">Ad Soyad</th>
+                        <th>Bölüm</th>
+                        <th class="sayisal sag" title="Görev payı — görev sayısı ağırlıkla orantılıdır. Örn. ağırlık 1,0 olan 14 sınava giriyorsa 0,5 olan 7, 2,0 olan 28 sınava girer.">Ağırlık</th>
+                        <th class="sayisal sag">Sınav</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in gorunen)
+                    {
+                        <tr @key="g" class="@(_secili.Contains(g) ? "secili" : "")">
+                            <td class="secim-sutunu">
+                                <input type="checkbox" checked="@_secili.Contains(g)" @onchange="e => Sec(g, (bool)e.Value)" aria-label="@($"{g.AdSoyad} satırını seç")" />
+                            </td>
+                            <td class="dar-sutun"><HucreDuzenleyici Deger="@g.Kod" Etiket="Kod" Kaydet="v => Servis.AlaniDegistir(g, GozetmenAlani.Kod, v)" /></td>
+                            <td><HucreDuzenleyici Deger="@g.AdSoyad" Etiket="Ad Soyad" Kaydet="v => Servis.AlaniDegistir(g, GozetmenAlani.AdSoyad, v)" /></td>
+                            <td>
+                                <select class="hucre-secimi" value="@g.Bolum" aria-label="@($"{g.AdSoyad} bölümü")"
+                                        @onchange="e => BolumDegisti(g, e.Value?.ToString())">
+                                    @foreach (var b in Secenekler(g))
+                                    {
+                                        <option value="@b">@b</option>
+                                    }
+                                </select>
+                            </td>
+                            <td class="sayisal sag"><HucreDuzenleyici Sayi="true" Deger="@GozetmenServisi.AgirlikMetni(g.Agirlik)" Etiket="Ağırlık" Kaydet="v => Servis.AlaniDegistir(g, GozetmenAlani.Agirlik, v)" /></td>
+                            <td class="sayisal sag">@g.AtananSinavSayisi</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="tablo-ipucu">
+            Kod, ad ve ağırlık hücresine tıklayıp düzenleyin — <kbd>Enter</kbd> kaydeder, <kbd>Esc</kbd> vazgeçer. Ad değişikliği mevcut salon görevlerine de yansır.
+            Satırları işaretleyip <kbd>Delete</kbd> ile silebilirsiniz.
+        </div>
+    </section>
+}
+
+@code {
+    private string _arama;
+    private readonly HashSet<Gozetmen> _secili = new();
+    private List<string> _bolumSecenekleri;
+
+    protected override void OnParametersSet() => _bolumSecenekleri = null;
+
+    private List<Gozetmen> Gorunen()
+    {
+        _secili.IntersectWith(Durum.GozetmenListesi);
+        _bolumSecenekleri = Servis.GozetmenBolumSecenekleri();
+        return GozetmenServisi.Filtrele(Durum.GozetmenListesi, _arama);
+    }
+
+    /// <summary>Bölüm seçenekleri; gözetmenin mevcut yazımı listede yoksa (ör. boş) başa eklenir.</summary>
+    private IEnumerable<string> Secenekler(Gozetmen g)
+        => _bolumSecenekleri.Contains(g.Bolum ?? "") ? _bolumSecenekleri : _bolumSecenekleri.Prepend(g.Bolum ?? "");
+
+    private int BosGorev()
+        => Durum.SonSonuclar.Sum(a => a.AtananSalonlar?.Count(x => string.IsNullOrWhiteSpace(x.GozetmenAdSoyad)) ?? 0);
+
+    private void Sec(Gozetmen g, bool secili)
+    {
+        if (secili) _secili.Add(g);
+        else _secili.Remove(g);
+    }
+
+    private void HepsiniSec(List<Gozetmen> gorunen, bool secili)
+    {
+        if (secili) _secili.UnionWith(gorunen);
+        else _secili.ExceptWith(gorunen);
+    }
+
+    private void BolumDegisti(Gozetmen g, string bolum)
+    {
+        string hata = Servis.AlaniDegistir(g, GozetmenAlani.Bolum, bolum);
+        if (hata != null) Bildirim.Add(hata, Severity.Warning);
+    }
+
+    private async Task TabloTusu(KeyboardEventArgs e)
+    {
+        if (e.Key == "Delete" && _secili.Count > 0) await SecilenleriSilAsync();
+    }
+
+    private async Task SecilenleriSilAsync()
+    {
+        var silinecek = Durum.GozetmenListesi.Where(_secili.Contains).ToList();
+        if (silinecek.Count == 0) return;
+        if (!await Diyalog.OnaylaAsync("Gözetmen Sil", Servis.SilmeOnayMetni(silinecek), "Sil", "Vazgeç", tehlikeli: true)) return;
+        int gorev = Servis.GozetmenleriSil(silinecek);
+        _secili.Clear();
+        Bildirim.Add((silinecek.Count == 1 ? $"'{silinecek[0].AdSoyad}' silindi." : $"{silinecek.Count} gözetmen silindi.") +
+                     (gorev > 0 ? $" {gorev} salon görevi boş kaldı." : ""), Severity.Info);
+    }
+
+    private async Task EkleAsync()
+    {
+        var referans = await Diyalog.ShowAsync<GozetmenEkleDialog>((string)null, new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true, BackdropClick = false, CloseButton = true
+        });
+        var sonuc = await referans.Result;
+        if (sonuc is { Canceled: false, Data: Gozetmen eklenen })
+        {
+            _arama = null;
+            Bildirim.Add($"'{eklenen.AdSoyad}' eklendi.", Severity.Success);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // LİSTE YÜKLE / ATA (eski BtnGozetmenYukle_Click, BtnGozetmenAta_Click)
+    // ═══════════════════════════════════════════════════════════════
+
+    private async Task ListeYukleAsync()
+    {
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.GozetmenListesi, out var sonYol);
+        string yol = await Dosya.AcilacakDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = SonDosyaTurleri.GozetmenListesi,
+            Baslik = "Gözetmen Listesi Excel Dosyası Seçin",
+            Filtre = "Excel Dosyası (*.xlsx)|*.xlsx|Tüm Dosyalar (*.*)|*.*",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        GozetmenListesiOnizlemesi onizleme;
+        try
+        {
+            onizleme = await IsYurutucu.CalistirAsync("Gözetmen Excel dosyası okunuyor…", () => GozetmenServisi.Onizle(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Gözetmen listesi okunamadı", ex);
+            Durum.DurumYaz("❌ Gözetmen import başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Gözetmen Excel import hatası:\n\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        if (onizleme.Bos)
+        {
+            Durum.DurumYaz("❌ Gözetmen yüklenemedi.", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Gözetmen Okunamadı", "Excel dosyasından hiç gözetmen okunamadı.\n\nDesteklenen formatlar:\n" +
+                "• Fakülte GÖREVLER listesi (Bölüm | Kod | Ad Soyad)\n• Basit liste (Sütun 1 = Ad Soyad, Sütun 2 = Bölüm)", DurumTuru.Uyari);
+            return;
+        }
+
+        if (Durum.GozetmenListesi.Count > 0)
+        {
+            bool onay = await Diyalog.OnaylaAsync("Gözetmen Listesi Yükleme Onayı", null, "Listeyi değiştir", "Vazgeç", tehlikeli: true,
+                icerik: @<div class="onizleme-ozeti">
+                    <p>Dosyadan <b>@onizleme.Gozetmenler.Count gözetmen</b> okundu.</p>
+                    <table class="tablo ozet-tablosu">
+                        <thead><tr><th>Bölüm</th><th class="sayisal sag">Kişi</th></tr></thead>
+                        <tbody>
+                            @foreach (var (bolum, kisi) in onizleme.Bolumler)
+                            {
+                                <tr><td>@bolum</td><td class="sayisal sag">@kisi</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                        Mevcut @Durum.GozetmenListesi.Count kişilik liste ve tabloda yaptığınız düzeltmeler bu dosyadakiyle değiştirilir.
+                        Salon görevlerindeki gözetmen adları değişmez; yeni listeyle 'Gözetmenleri ata'yı yeniden çalıştırın.
+                    </MudAlert>
+                </div>);
+            if (!onay) return;
+        }
+
+        ListeyiUygula(onizleme, yol);
+        if (onizleme.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Gözetmen Import Uyarıları", onizleme.Uyarilar, $"{onizleme.Uyarilar.Count} satır atlandı.");
+    }
+
+    private void ListeyiUygula(GozetmenListesiOnizlemesi onizleme, string yol)
+    {
+        Durum.SonDosyalar[SonDosyaTurleri.GozetmenListesi] = yol;
+        Servis.ListeyiUygula(onizleme);
+        _secili.Clear();
+        _arama = null;
+        Bildirim.Add($"{onizleme.Gozetmenler.Count} gözetmen yüklendi.", Severity.Success);
+    }
+
+    private async Task AtaAsync()
+    {
+        string eksik = Servis.AtamaEksigi();
+        if (eksik != null)
+        {
+            await Diyalog.BilgiAsync("Eksik Bilgi", eksik, DurumTuru.Uyari);
+            return;
+        }
+
+        GozetmenAtamaSonucu sonuc;
+        try
+        {
+            sonuc = await IsYurutucu.CalistirAsync("Gözetmenler atanıyor…", Servis.GozetmenleriAta);
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Gözetmen ataması başarısız", ex);
+            Durum.DurumYaz("❌ Gözetmen ataması başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Gözetmen atama hatası:\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        Servis.AtamaTamamlandi(sonuc);
+        RenderFragment ozet = @<div class="onizleme-ozeti">
+            <p><b>@sonuc.ToplamAtama salon-gözetmen ataması</b> yapıldı. Excel çıktısında salonların yanında gözetmen adları yer alacak.</p>
+            <table class="tablo ozet-tablosu">
+                <thead><tr><th class="sayisal sag">Ağırlık</th><th class="sayisal sag">Ortalama sınav</th><th class="sayisal sag">Kişi</th></tr></thead>
+                <tbody>
+                    @foreach (var (agirlik, ortalama, kisi) in sonuc.AgirlikOzeti)
+                    {
+                        <tr><td class="sayisal sag">@GozetmenServisi.AgirlikMetni(agirlik)</td><td class="sayisal sag">@ortalama.ToString("0.#")</td><td class="sayisal sag">@kisi</td></tr>
+                    }
+                </tbody>
+            </table>
+            @if (sonuc.Uyarilar.Count > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@sonuc.Uyarilar.Count uyarı var; bu pencereden sonra listelenir.</MudAlert>
+            }
+        </div>;
+        await Diyalog.BilgiAsync(sonuc.Uyarilar.Count > 0 ? "Gözetmen Atama Uyarıları" : "Atama Tamamlandı", null,
+            sonuc.Uyarilar.Count > 0 ? DurumTuru.Uyari : DurumTuru.Basari, ozet);
+        if (sonuc.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Gözetmen Atama Uyarıları", sonuc.Uyarilar);
+    }
+}

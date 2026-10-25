@@ -1,0 +1,112 @@
+@* ═══ SINAV TAKVİMİ — yan yana aylar; tıklanan gün sınav günü yapılır ya da takvimden çıkarılır ═══ *@
+<div class="takvim">
+    <div class="takvim-ustu">
+        <MudIconButton Icon="@Icons.Material.Outlined.ChevronLeft" Size="Size.Small" OnClick="() => AyKaydir(-1)" aria-label="Önceki ay" />
+        <MudIconButton Icon="@Icons.Material.Outlined.ChevronRight" Size="Size.Small" OnClick="() => AyKaydir(1)" aria-label="Sonraki ay" />
+        @if (SinavGunleri.Count > 0)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Today" OnClick="IlkSinavAyinaGit">
+                İlk sınav gününe git
+            </MudButton>
+        }
+    </div>
+
+    <div class="takvim-aylari">
+        @for (int i = 0; i < AySayisi; i++)
+        {
+            var ay = _ilkAy.AddMonths(i);
+            <div class="takvim-ayi">
+                <div class="takvim-ay-adi">@Tr.DateTimeFormat.GetMonthName(ay.Month) @ay.Year</div>
+                <div class="takvim-izgarasi">
+                    @foreach (var kisaltma in GunKisaltmalari)
+                    {
+                        <div class="takvim-gun-basligi">@kisaltma</div>
+                    }
+                    @for (int b = 0; b < BosGunSayisi(ay); b++)
+                    {
+                        <div aria-hidden="true"></div>
+                    }
+                    @for (int g = 1; g <= DateTime.DaysInMonth(ay.Year, ay.Month); g++)
+                    {
+                        var gun = new DateTime(ay.Year, ay.Month, g);
+                        <button type="button" class="@GunSinifi(gun)" title="@GunIpucu(gun)" aria-pressed="@(SinavGunuMu(gun) ? "true" : "false")"
+                                @onclick="() => GunTiklandi.InvokeAsync(gun)">
+                            @g
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="takvim-aciklamasi" aria-hidden="true">
+        <span><i class="ornek sinav"></i> Sınav günü</span>
+        <span><i class="ornek haftasonu"></i> Hafta sonu@(HaftaSonuBos ? " (bu türde normalde boş)" : "")</span>
+        <span><i class="ornek bugun"></i> Bugün</span>
+    </div>
+</div>
+
+@code {
+    private static readonly CultureInfo Tr = CultureInfo.GetCultureInfo("tr-TR");
+    private static readonly string[] GunKisaltmalari = { "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz" };
+
+    /// <summary>Sınav günleri ve saatleri (çalışma durumundaki takvim).</summary>
+    [Parameter] public IReadOnlyDictionary<DateTime, List<string>> SinavGunleri { get; set; } = new Dictionary<DateTime, List<string>>();
+
+    /// <summary>Bu sınav türünde hafta sonları normalde boş mu (Final)?</summary>
+    [Parameter] public bool HaftaSonuBos { get; set; }
+
+    [Parameter] public DateTime? SeciliGun { get; set; }
+
+    /// <summary>Takvim boşken ilk gösterilecek ay bu tarihin ayıdır.</summary>
+    [Parameter] public DateTime? Baslangic { get; set; }
+
+    [Parameter] public EventCallback<DateTime> GunTiklandi { get; set; }
+
+    [Parameter] public int AySayisi { get; set; } = 2;
+
+    private DateTime _ilkAy;
+
+    protected override void OnParametersSet()
+    {
+        if (_ilkAy == default)
+            AyaGit(SinavGunleri.Count > 0 ? SinavGunleri.Keys.Min() : (Baslangic ?? DateTime.Today));
+    }
+
+    /// <summary>Takvimi verilen tarihin ayından başlatır (ör. "Takvimi Doldur"dan sonra).</summary>
+    public void AyaGit(DateTime tarih)
+    {
+        _ilkAy = new DateTime(tarih.Year, tarih.Month, 1);
+        StateHasChanged();
+    }
+
+    private void AyKaydir(int ay) => _ilkAy = _ilkAy.AddMonths(ay);
+
+    private void IlkSinavAyinaGit() => AyaGit(SinavGunleri.Keys.Min());
+
+    /// <summary>Ayın ilk gününden önceki boş hücre sayısı (hafta Pazartesi başlar).</summary>
+    private static int BosGunSayisi(DateTime ay) => ((int)ay.DayOfWeek + 6) % 7;
+
+    private bool SinavGunuMu(DateTime gun) => SinavGunleri.ContainsKey(gun);
+
+    private static bool HaftaSonuMu(DateTime gun) => gun.DayOfWeek == DayOfWeek.Saturday || gun.DayOfWeek == DayOfWeek.Sunday;
+
+    private string GunSinifi(DateTime gun)
+    {
+        var siniflar = new List<string> { "takvim-gunu" };
+        if (SinavGunuMu(gun)) siniflar.Add("sinav");
+        if (HaftaSonuMu(gun)) siniflar.Add(HaftaSonuBos ? "haftasonu kapali" : "haftasonu");
+        if (gun == DateTime.Today) siniflar.Add("bugun");
+        if (gun < DateTime.Today) siniflar.Add("gecmis");
+        if (SeciliGun == gun) siniflar.Add("secili");
+        return string.Join(" ", siniflar);
+    }
+
+    private string GunIpucu(DateTime gun)
+    {
+        string tarih = gun.ToString("d MMMM yyyy dddd", Tr);
+        if (SinavGunleri.TryGetValue(gun, out var saatler))
+            return $"{tarih}\nSınav günü — {saatler.Count} saat ({string.Join(", ", saatler)})\nTıklayınca takvimden çıkarılır.";
+        return $"{tarih}\nTıklayınca sınav günü yapılır.";
+    }
+}

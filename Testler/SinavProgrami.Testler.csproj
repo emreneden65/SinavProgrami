@@ -7,7 +7,7 @@
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
@@ -17,5 +17,18 @@
   <ItemGroup>
     <ProjectReference Include="..\SinavProgrami.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Yeni arayüzün Razor bileşenlerini pencere açmadan çizip denetlemek için -->
+    <PackageReference Include="bunit" Version="2.11.3" />
+  </ItemGroup>
+
+  <!-- Ana projedeki gibi: WebView2 paketinin koşulsuz eklediği (kullanılmayan) WPF kütüphanesi
+       WindowsBase sürüm çakışması uyarısı (MSB3277) vermesin. -->
+  <Target Name="WebView2WpfBasvurusunuCikar" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

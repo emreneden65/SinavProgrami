@@ -1,0 +1,59 @@
+@* Eski MessageBox'ların yerini alan diyalog: düz metin mesaj + isteğe bağlı zengin içerik (özet tablosu, liste) *@
+<MudDialog ContentClass="onay-icerigi">
+    <TitleContent>
+        <div class="onay-basligi">
+            <MudIcon Icon="@Ikon" Color="@IkonRengi" />
+            <span>@Baslik</span>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(Mesaj))
+        {
+            <div class="onay-mesaji">@Mesaj</div>
+        }
+        @Icerik
+    </DialogContent>
+    <DialogActions>
+        @if (HayirMetni != null)
+        {
+            <MudButton Variant="Variant.Text" OnClick="Iptal">@HayirMetni</MudButton>
+        }
+        <MudButton Variant="Variant.Filled" Color="@(Tehlikeli ? Color.Error : Color.Primary)" OnClick="Tamam" autofocus>
+            @EvetMetni
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Diyalog { get; set; }
+
+    [Parameter] public string Baslik { get; set; }
+    [Parameter] public string Mesaj { get; set; }
+    [Parameter] public RenderFragment Icerik { get; set; }
+    [Parameter] public string EvetMetni { get; set; } = "Tamam";
+
+    /// <summary>null ise tek düğmeli bilgi diyaloğu.</summary>
+    [Parameter] public string HayirMetni { get; set; }
+    [Parameter] public bool Tehlikeli { get; set; }
+    [Parameter] public DurumTuru Tur { get; set; } = DurumTuru.Bilgi;
+
+    private string Ikon => Tur switch
+    {
+        DurumTuru.Basari => Icons.Material.Outlined.CheckCircleOutline,
+        DurumTuru.Uyari => Icons.Material.Outlined.WarningAmber,
+        DurumTuru.Hata => Icons.Material.Outlined.ErrorOutline,
+        _ => HayirMetni != null ? Icons.Material.Outlined.HelpOutline : Icons.Material.Outlined.Info
+    };
+
+    private Color IkonRengi => Tur switch
+    {
+        DurumTuru.Basari => Color.Success,
+        DurumTuru.Uyari => Color.Warning,
+        DurumTuru.Hata => Color.Error,
+        _ => Color.Primary
+    };
+
+    private void Tamam() => Diyalog.Close(DialogResult.Ok(true));
+
+    private void Iptal() => Diyalog.Cancel();
+}

@@ -61,6 +61,12 @@ namespace SinavProgrami.DataAccess
         public bool PencereTamEkran { get; set; }
         public int PencereGenislik { get; set; }
         public int PencereYukseklik { get; set; }
+
+        /// <summary>Yeni arayüz: kapanışta açık olan sayfa (eski arayüz kullanmaz; eski kayıtlarda yok → null).</summary>
+        public string SonSayfa { get; set; }
+
+        /// <summary>Yeni arayüz: son üretilen / yüklenen Excel dosyaları, tür → tam yol (eski kayıtlarda boş).</summary>
+        public Dictionary<string, string> SonDosyalar { get; set; } = new Dictionary<string, string>();
     }
 
     /// <summary>Takvimdeki bir sınav günü ve o günün seçili saatleri.</summary>

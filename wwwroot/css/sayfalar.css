@@ -1,0 +1,353 @@
+/* ═══════════════════════════════════════════════════════════════
+   SALONLAR, GÖZETMENLER, FİNAL, AYARLAR — sayfa düzenleri ve salon matrisi
+   (renk değişkenleri app.css'teki .tema-koku tanımlarından gelir)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Eylem satırı: birincil düğme + açıklama / kilit nedeni ── */
+.eylem-satiri {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.eylem-aciklamasi {
+    flex: 1 1 360px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--mud-palette-text-secondary);
+}
+
+/* ── Araç çubuğundaki seçim kutuları ── */
+/* MudSelect kendi sarmalayıcısında (div.mud-select, flex: 1) gelir; sarmalayıcı içeriği kadar yer kaplasın */
+.arac-cubugu > .mud-select {
+    flex: 0 0 auto;
+}
+
+.arac-cubugu .mud-input-control.filtre-kutusu {
+    flex: 0 0 200px;
+    width: 200px;
+    max-width: 200px;
+}
+
+.arac-cubugu .mud-input-control.filtre-kutusu.dar {
+    flex-basis: 140px;
+    width: 140px;
+    max-width: 140px;
+}
+
+.arac-cubugu .yakinlastirma {
+    margin-left: 4px;
+}
+
+.sonuc-karti {
+    padding: 0;
+    overflow: hidden;
+}
+
+.sonuc-karti .ders-sekme-kabi {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+/* ── Salon matrisi ── */
+.matris-kabi {
+    position: relative;
+    overflow: auto;
+    height: calc(100vh - 330px);
+    min-height: 340px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px;
+    background: var(--mud-palette-surface);
+}
+
+.matris-izgarasi {
+    /* Sabit düzen: sütunlar <col> genişliklerini alır; sol 6 sütun yatay kaydırmada yerinde kalır */
+    width: 1px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    font-size: calc(13px * var(--olcek, 1));
+    font-variant-numeric: tabular-nums;
+
+    --m1: 4.4em;   /* Bölüm */
+    --m2: 3.2em;   /* Sınıf */
+    --m3: 8.2em;   /* Tarih */
+    --m4: 4.2em;   /* Saat */
+    --m5: 15em;    /* Dersler */
+    --m6: 4em;     /* Kont. */
+}
+
+.matris-izgarasi col.m-bolum { width: var(--m1); }
+.matris-izgarasi col.m-sinif { width: var(--m2); }
+.matris-izgarasi col.m-tarih { width: var(--m3); }
+.matris-izgarasi col.m-saat { width: var(--m4); }
+.matris-izgarasi col.m-ders { width: var(--m5); }
+.matris-izgarasi col.m-kont { width: var(--m6); }
+.matris-izgarasi col.m-salon { width: 4.4em; }
+
+.matris-izgarasi th,
+.matris-izgarasi td {
+    box-sizing: border-box;
+    height: var(--satir, 28px);
+    padding: 0 0.4em;
+    border-right: 1px solid var(--sablon-cizgi);
+    border-bottom: 1px solid var(--sablon-cizgi);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.matris-izgarasi tbody tr {
+    height: var(--satir, 28px);
+}
+
+.matris-izgarasi thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    height: 3.2em;
+    background: var(--mud-palette-surface);
+    color: var(--mud-palette-text-secondary);
+    font-size: 0.88em;
+    font-weight: 650;
+    text-align: center;
+    box-shadow: inset 0 -1px 0 var(--sablon-kalin-cizgi);
+}
+
+.matris-izgarasi th.sol {
+    text-align: left;
+}
+
+.matris-izgarasi th.salon-basligi {
+    padding: 0 2px;
+    line-height: 1.2;
+}
+
+.matris-izgarasi th.salon-basligi span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.matris-izgarasi th.salon-basligi .kod {
+    color: var(--mud-palette-text-primary);
+}
+
+.matris-izgarasi th.salon-basligi .kapasite {
+    font-weight: 500;
+}
+
+.matris-izgarasi th.salon-basligi.uygulamali .kod {
+    color: var(--adim-2);
+}
+
+/* Sol sabit sütunlar */
+.matris-izgarasi .sabit {
+    position: sticky;
+    z-index: 1;
+    background: var(--mud-palette-surface);
+}
+
+.matris-izgarasi thead .sabit {
+    z-index: 4;
+}
+
+.matris-izgarasi .s1 { left: 0; }
+.matris-izgarasi .s2 { left: var(--m1); }
+.matris-izgarasi .s3 { left: calc(var(--m1) + var(--m2)); }
+.matris-izgarasi .s4 { left: calc(var(--m1) + var(--m2) + var(--m3)); }
+.matris-izgarasi .s5 { left: calc(var(--m1) + var(--m2) + var(--m3) + var(--m4)); }
+.matris-izgarasi .s6 { left: calc(var(--m1) + var(--m2) + var(--m3) + var(--m4) + var(--m5)); }
+
+.matris-izgarasi .son-sabit {
+    border-right: 2px solid var(--sablon-kalin-cizgi);
+}
+
+.matris-izgarasi tr.zebra td,
+.matris-izgarasi tr.zebra td.sabit {
+    background: var(--sablon-blok-b);
+}
+
+.matris-izgarasi td {
+    color: var(--mud-palette-text-primary);
+    outline: none;
+    cursor: default;
+    scroll-margin: 3.4em 0 0 calc(var(--m1) + var(--m2) + var(--m3) + var(--m4) + var(--m5) + var(--m6));
+}
+
+.matris-izgarasi td.sabit:nth-child(5) {
+    font-weight: 600;
+}
+
+.matris-izgarasi td.orta { text-align: center; }
+.matris-izgarasi td.sayi { text-align: right; }
+
+.matris-izgarasi tr.bos td {
+    color: var(--mud-palette-text-disabled);
+    font-style: italic;
+}
+
+.matris-izgarasi td[data-c] {
+    text-align: center;
+    font-weight: 700;
+}
+
+.matris-izgarasi td.dolu,
+.matris-izgarasi tr.zebra td.dolu {
+    background: color-mix(in srgb, var(--basari-yazi) 22%, var(--mud-palette-surface));
+    color: var(--mud-palette-text-primary);
+}
+
+.matris-izgarasi td.asim,
+.matris-izgarasi tr.zebra td.asim {
+    background: color-mix(in srgb, var(--uyari-yazi) 32%, var(--mud-palette-surface));
+    box-shadow: inset 0 -3px 0 var(--uyari-yazi);
+}
+
+.matris-izgarasi td.aktif {
+    box-shadow: inset 0 0 0 2px var(--mud-palette-primary);
+}
+
+.matris-izgarasi td.duzenleniyor {
+    padding: 0 2px;
+    overflow: visible;
+}
+
+.matris-izgarasi td .hucre-kutusu {
+    margin: 0;
+    min-width: 0;
+    height: calc(var(--satir, 28px) - 6px);
+    padding: 0 0.3em;
+    font-size: 1em;
+}
+
+.lejant .uygulamali-ornegi {
+    color: var(--adim-2);
+    font-weight: 700;
+}
+
+.lejant .kutu.dolu { background: color-mix(in srgb, var(--basari-yazi) 22%, var(--mud-palette-surface)); }
+.lejant .kutu.asim { background: color-mix(in srgb, var(--uyari-yazi) 32%, var(--mud-palette-surface)); border-color: var(--uyari-yazi); }
+
+/* ── Gözetmenler ── */
+.agirlik-ozeti {
+    width: auto;
+    min-width: 320px;
+    margin-top: 14px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+}
+
+select.hucre-secimi {
+    width: 100%;
+    max-width: 280px;
+    padding: 3px 6px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--mud-palette-text-primary);
+    font: inherit;
+    cursor: pointer;
+}
+
+select.hucre-secimi:hover,
+select.hucre-secimi:focus {
+    border-color: var(--mud-palette-lines-inputs);
+    background: var(--mud-palette-background);
+    outline: none;
+}
+
+select.hucre-secimi option {
+    background: var(--mud-palette-surface);
+    color: var(--mud-palette-text-primary);
+}
+
+/* ── Final ── */
+.final-dosyasi {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--adim-7) 40%, transparent);
+    background: color-mix(in srgb, var(--adim-7) 8%, transparent);
+}
+
+/* ── Ayarlar ── */
+.ayar-satiri {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding: 12px 0;
+}
+
+.ayar-satiri + .ayar-satiri {
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+.ayar-metni {
+    min-width: 0;
+}
+
+.ayar-adi {
+    font-weight: 600;
+}
+
+.ayar-aciklamasi {
+    max-width: 760px;
+    margin-top: 2px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--mud-palette-text-secondary);
+}
+
+.ayar-yolu {
+    margin-top: 4px;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 12px;
+    color: var(--mud-palette-text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.ayar-satiri .mud-button-root {
+    flex: 0 0 auto;
+}
+
+.tehlike-karti {
+    border-color: color-mix(in srgb, var(--hata-yazi) 35%, var(--mud-palette-lines-default));
+}
+
+.tema-secimi.mud-toggle-group {
+    display: inline-flex !important;
+    width: auto !important;
+}
+
+.tema-secimi .mud-toggle-item .mud-icon-root {
+    margin-right: 6px;
+}
+
+.tema-secimi .mud-toggle-item {
+    flex: 0 0 auto;
+    padding: 3px 16px !important;
+    white-space: nowrap;
+}
+
+dl.hakkinda {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 18px;
+    margin: 0;
+}
+
+dl.hakkinda dt {
+    color: var(--mud-palette-text-secondary);
+}
+
+dl.hakkinda dd {
+    margin: 0;
+}

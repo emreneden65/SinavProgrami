@@ -1,0 +1,167 @@
+@page "/ayarlar"
+@inherits DurumaBagliBilesen
+@inject AyarlarDeposu Depo
+@inject TemizlemeServisi Temizleme
+@inject IPencereServisi Pencere
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Ayarlar</PageTitle>
+
+<SayfaBasligi Ikon="@AdimIkonlari.Ayarlar" Baslik="Ayarlar" Aciklama="Tema, veri klasörleri, temizleme ve sıfırlama." />
+
+<section class="kart" aria-labelledby="baslik-gorunum">
+    <div class="kart-basligi"><h2 id="baslik-gorunum">Görünüm</h2></div>
+    <div class="ayar-satiri">
+        <div>
+            <div class="ayar-adi">Tema</div>
+            <div class="ayar-aciklamasi">Seçim bu bilgisayarda saklanır; "Uygulamayı sıfırla" temayı değiştirmez.</div>
+        </div>
+        <MudToggleGroup T="bool" Value="Depo.Ayarlar.KoyuTema" ValueChanged="Depo.TemaAyarla" SelectionMode="SelectionMode.SingleSelection"
+                        Size="Size.Small" Outlined="true" Color="Color.Primary" Class="tema-secimi">
+            <MudToggleItem Value="false"><MudIcon Icon="@Icons.Material.Outlined.LightMode" Size="Size.Small" /> Açık</MudToggleItem>
+            <MudToggleItem Value="true"><MudIcon Icon="@Icons.Material.Outlined.DarkMode" Size="Size.Small" /> Koyu</MudToggleItem>
+        </MudToggleGroup>
+    </div>
+</section>
+
+<section class="kart" aria-labelledby="baslik-veri">
+    <div class="kart-basligi"><h2 id="baslik-veri">Veri</h2></div>
+    @if (VeriKlasoru.DenemeModu)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            Uygulama <code>--deneme</code> ile açıldı ve <b>deneme verisiyle</b> çalışıyor: gerçek oturum dosyanızın bir kopyası kullanılır,
+            asıl dosyalara yazılmaz. Gerçek verinizle çalışmak için uygulamayı anahtarsız açın.
+        </MudAlert>
+    }
+    <div class="ayar-satiri">
+        <div class="ayar-metni">
+            <div class="ayar-adi">Oturum klasörü</div>
+            <div class="ayar-aciklamasi">Çalışmanız (<code>oturum.json</code>), hoca eşlemesi ve bu ayarlar burada saklanır; 15 saniyede bir ve kapanışta kaydedilir.</div>
+            <div class="ayar-yolu" title="@OturumKaydi.Klasor">@OturumKaydi.Klasor</div>
+        </div>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.FolderOpen" OnClick="() => Pencere.KlasoruAc(OturumKaydi.Klasor)">
+            Klasörü aç
+        </MudButton>
+    </div>
+    @if (VeriKlasoru.DenemeModu)
+    {
+        <div class="ayar-satiri">
+            <div class="ayar-metni">
+                <div class="ayar-adi">Deneme verisini yenile</div>
+                <div class="ayar-aciklamasi">Deneme kopyası gerçek oturum dosyanızın şu anki haliyle değiştirilir ve uygulama yeniden başlar.</div>
+            </div>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.History" OnClick="DenemeVerisiniYenileAsync">
+                Yenile
+            </MudButton>
+        </div>
+    }
+    <div class="ayar-satiri">
+        <div class="ayar-metni">
+            <div class="ayar-adi">Hata günlüğü</div>
+            <div class="ayar-aciklamasi">Beklenmeyen hatalar ayrıntılarıyla <code>hata.log</code> dosyasına yazılır; bir sorun bildirirken bu dosyayı ekleyebilirsiniz.</div>
+            <div class="ayar-yolu" title="@HataGunlugu.Klasor">@HataGunlugu.Klasor</div>
+        </div>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.FolderOpen" OnClick="() => Pencere.KlasoruAc(HataGunlugu.Klasor)">
+            Klasörü aç
+        </MudButton>
+    </div>
+</section>
+
+<section class="kart tehlike-karti" aria-labelledby="baslik-temizleme">
+    <div class="kart-basligi"><h2 id="baslik-temizleme">Temizleme</h2></div>
+    <div class="ayar-satiri">
+        <div class="ayar-metni">
+            <div class="ayar-adi">Temizle</div>
+            <div class="ayar-aciklamasi">Ders listesi, şablon, salon ve gözetmen atamaları, gözetmen listesi silinir; takvim varsayılana döner ve
+                adımlar baştan başlar. Derslikler, öğretim dönemi, hata oranları, havuzlar ve ortak ders seçimi korunur.</div>
+        </div>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.CleaningServices" OnClick="TemizleAsync">
+            Temizle
+        </MudButton>
+    </div>
+    <div class="ayar-satiri">
+        <div class="ayar-metni">
+            <div class="ayar-adi">Uygulamayı sıfırla</div>
+            <div class="ayar-aciklamasi">Uygulama ilk açılış durumuna döner: yukarıdakilere ek olarak derslik listesi, öğretim dönemi, havuz, ortak ders,
+                uygulamalı ders ve hata oranı ayarları da silinir, oturum kaydı kaldırılır. Geri alınamaz.</div>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.RestartAlt" OnClick="SifirlaAsync">
+            Uygulamayı sıfırla
+        </MudButton>
+    </div>
+</section>
+
+<section class="kart" aria-labelledby="baslik-hakkinda">
+    <div class="kart-basligi"><h2 id="baslik-hakkinda">Hakkında</h2></div>
+    <dl class="hakkinda">
+        <dt>Sürüm</dt><dd>@Surum</dd>
+        <dt>Arayüz</dt><dd>Yeni arayüz — eski arayüz yedek olarak duruyor (<code>SinavProgrami.exe --eski-arayuz</code>)</dd>
+        <dt>Çalışma ortamı</dt><dd>.NET @Environment.Version</dd>
+    </dl>
+</section>
+
+@code {
+    private static string Surum => typeof(AyarlarDeposu).Assembly.GetName().Version?.ToString(3) ?? "—";
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Depo.Degisti += AyarDegisti;
+    }
+
+    private void AyarDegisti() => InvokeAsync(StateHasChanged);
+
+    public override void Dispose()
+    {
+        Depo.Degisti -= AyarDegisti;
+        base.Dispose();
+    }
+
+    private async Task DenemeVerisiniYenileAsync()
+    {
+        bool onay = await Diyalog.OnaylaAsync("Deneme Verisini Yenile",
+            "Deneme kopyası, gerçek oturum dosyanızın şu anki haliyle değiştirilecek ve uygulama yeniden başlayacak.\n\n" +
+            "Deneme kopyasında yaptığınız değişiklikler kaybolur. Devam edilsin mi?", "Yenile ve yeniden başlat", "Vazgeç", tehlikeli: true);
+        if (onay) Pencere.DenemeVerisiyleYenidenBaslat();
+    }
+
+    /// <summary>Eski BtnTemizle_Click (+ düzeltme 3: adım kilitleri ve salon ataması da sıfırlanır).</summary>
+    private async Task TemizleAsync()
+    {
+        if (!await Diyalog.OnaylaAsync("Onay", "Tüm veriler temizlenecek. Emin misiniz?\n\n" +
+                "Silinecek: ders listesi, şablon, salon ve gözetmen atamaları, gözetmen listesi; takvim varsayılana döner.\n" +
+                "Korunacak: derslikler, öğretim dönemi, hata oranları, havuzlar, ortak ders seçimi.",
+                "Temizle", "Vazgeç", tehlikeli: true))
+            return;
+        Temizleme.Temizle();
+        Bildirim.Add("Veriler temizlendi.", Severity.Info);
+    }
+
+    /// <summary>Eski BtnVeritabaniSifirla_Click.</summary>
+    private async Task SifirlaAsync()
+    {
+        if (!await Diyalog.OnaylaAsync("Uygulamayı Sıfırlama Onayı",
+                "⚠ DİKKAT!\n\nUygulamadaki tüm dersler, takvim, sonuçlar, derslik listesi ve ayarlar\n" +
+                "(öğretim yılı / dönem, havuz, ortak ders, uygulamalı ders, hata oranı) temizlenecektir!\n" +
+                "Bu işlem geri alınamaz.\n\nDevam etmek istiyor musunuz?",
+                "Sıfırla", "Vazgeç", tehlikeli: true))
+            return;
+
+        try
+        {
+            try { await DatabaseHelper.TumKayitliDersleriSilAsync(); }
+            catch (Exception dbEx) { HataGunlugu.Yaz("Veritabanı silme hatası (yok sayıldı)", dbEx); }
+            Temizleme.Sifirla();
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Sıfırlama başarısız", ex);
+            Durum.DurumYaz("❌ Sıfırlama başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Sıfırlama hatası:\n\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+        await Diyalog.BilgiAsync("Sıfırlama Başarılı", "Uygulama başarıyla sıfırlandı!\n\n✅ Uygulama ilk açılış durumuna döndürüldü.", DurumTuru.Basari);
+    }
+}

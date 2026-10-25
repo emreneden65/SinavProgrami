@@ -1,0 +1,12 @@
+@* Kök bileşen: sayfa yönlendirmesi. Tüm sayfalar AnaDuzen (üst çubuk + adım menüsü + durum çubuğu) içinde açılır. *@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="rota">
+        <RouteView RouteData="@rota" DefaultLayout="@typeof(AnaDuzen)" />
+        <FocusOnNavigate RouteData="@rota" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(AnaDuzen)">
+            <SayfaBasligi Baslik="Sayfa bulunamadı" Aciklama="Soldaki menüden bir adım seçin." />
+        </LayoutView>
+    </NotFound>
+</Router>

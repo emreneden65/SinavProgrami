@@ -1,0 +1,60 @@
+@inherits DurumaBagliBilesen
+@inject DersServisi Servis
+
+@* Uygulamalı dersler: yalnızca UYGULAMALI (lab / teknik resim) dersliklere atanır; diğer dersler o derslikleri kullanamaz *@
+@if (Durum.Dersler.Count == 0)
+{
+    <div class="bos-durum genis">
+        <MudIcon Icon="@Icons.Material.Outlined.Science" Size="Size.Large" />
+        <div>Önce sınav listesini yükleyin; uygulamalı dersler o listeden işaretlenir.</div>
+    </div>
+}
+else
+{
+    var adaylar = Servis.UygulamaliAdaylari();
+    var gorunen = DersServisi.AdlariFiltrele(adaylar, _arama)
+        .Where(a => !_yalnizIsaretliler || Durum.UygulamaliDersler.Contains(a)).ToList();
+
+    <p class="sekme-aciklamasi">
+        Uygulamalı işaretlenen dersler yalnızca <b>uygulamalı</b> (laboratuvar / teknik resim) dersliklere atanır;
+        diğer dersler bu derslikleri kullanamaz.
+    </p>
+    @if (Durum.UygulamaliDersler.Count > 0 && Durum.Derslikler.Count > 0 && !Durum.Derslikler.Any(s => s.UygulamaliMi))
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+            Derslik listesinde uygulamalı derslik yok — işaretli dersler salon atamasında yer bulamayabilir.
+        </MudAlert>
+    }
+
+    <div class="arac-cubugu">
+        <MudTextField T="string" @bind-Value="_arama" Immediate="true" DebounceInterval="150" Placeholder="Ders ara"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="arama-kutusu" />
+        <MudSwitch T="bool" @bind-Value="_yalnizIsaretliler" Label="Yalnızca uygulamalılar" Color="Color.Primary" />
+        <span class="arac-notu">@Durum.UygulamaliDersler.Count / @adaylar.Count ders uygulamalı</span>
+    </div>
+
+    <div class="tablo-kabi orta">
+        <table class="tablo yapiskan">
+            <thead>
+                <tr><th scope="col">Ders adı</th><th scope="col" class="dar-sutun">Uygulamalı</th></tr>
+            </thead>
+            <tbody>
+                <Virtualize Items="gorunen" Context="ad" ItemSize="41" OverscanCount="10" SpacerElement="tr">
+                    <tr @key="ad" class="@(Durum.UygulamaliDersler.Contains(ad) ? "secili" : "")">
+                        <td>@ad</td>
+                        <td class="dar-sutun">
+                            <MudSwitch T="bool" Value="@Durum.UygulamaliDersler.Contains(ad)" ValueChanged="v => Servis.UygulamaliAyarla(ad, v)"
+                                       Color="Color.Primary" Size="Size.Small" aria-label="@($"{ad} uygulamalı")" />
+                        </td>
+                    </tr>
+                </Virtualize>
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private string _arama;
+    private bool _yalnizIsaretliler;
+}

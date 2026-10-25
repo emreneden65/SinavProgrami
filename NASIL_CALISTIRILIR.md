@@ -4,6 +4,10 @@ Uygulama **tamamen taşınabilirdir**: hedef bilgisayarda .NET, SQL Server veya
 başka hiçbir şeyin kurulu olmasına gerek yoktur. Veritabanı, exe'nin yanındaki
 tek bir `SinavDB.db` dosyasıdır.
 
+Arayüz, Windows'taki **Microsoft Edge WebView2** bileşeniyle çizilir. WebView2
+Windows 11'de hazır gelir; Windows 10'da Edge ile birlikte kurulur. Yoksa uygulama
+açılışta bunu söyler ve indirme sayfasını önerir (bkz. Bölüm 2, Adım 4).
+
 ---
 
 ## BÖLÜM 1 — Senin bilgisayarında paketi hazırlama
@@ -18,14 +22,15 @@ Sınav Programı penceresi açıksa kapat. Açıkken paketleme yapılamaz
 
 ### Adım 2 — `yayinla.bat` dosyasına çift tıkla
 
-Proje klasöründe (`Elfreni`) duran `yayinla.bat` dosyasına çift tıkla.
+Proje klasöründe duran `yayinla.bat` dosyasına çift tıkla.
 Siyah bir pencere açılır ve şunları sırayla yapar:
 
 1. `.NET SDK` kurulu mu diye bakar
 2. `Yayin\` klasöründe eski bir `SinavDB.db` varsa **yedekler**
    (proje klasörüne `SinavDB-yedek-tarih.db` adıyla)
 3. Uygulamayı `Yayin\` klasörüne **self-contained** derler
-   (yani .NET çalışma zamanı paketin içine gömülür)
+   (yani .NET çalışma zamanı paketin içine gömülür; arayüz dosyaları `wwwroot\`
+   ve `_content\` olarak yanına konur, internetten hiçbir şey indirilmez)
 4. `Templates\dagitim_sablonu.xlsx` dosyasını yanına kopyalar
 5. Masaüstünde **"Sınav Programı"** kısayolu oluşturur
 6. Her şeyi **`SinavProgrami-Portable.zip`** içinde paketler
@@ -40,7 +45,7 @@ Kırmızı `[HATA]` görürsen mesajı oku — genellikle üç şeyden biridir:
 
 | Hata | Çözüm |
 |---|---|
-| `.NET SDK bulunamadı` | https://dotnet.microsoft.com/download adresinden .NET 8 SDK kur |
+| `.NET SDK bulunamadı` | https://dotnet.microsoft.com/download adresinden .NET 10 SDK kur |
 | `Sınav Programı şu anda AÇIK` | Uygulamayı kapat, tekrar dene |
 | Derleme hataları | Kod hatası var; `dotnet build` çıktısına bak |
 
@@ -70,19 +75,25 @@ ZIP'e sağ tıkla → **Tümünü ayıkla**. Hedef klasör olarak şunlardan bir
 
 İlk açılışta:
 
-- `SinavDB.db` otomatik oluşturulur
-- Tablolar kurulur
+- `SinavDB.db` otomatik oluşturulur, tablolar kurulur
+- Pencere tam ekran açılır, **Genel Bakış** sayfası gelir
 
-Program hiçbir derslik listesiyle gelmez. Sol altta sarı
-**"⚠️ Derslik listesi yüklenmedi"** yazısı görünür; bu normaldir —
-okulunun derslik Excel'ini yükleyince yeşile döner (bkz. Bölüm 4).
+Program hiçbir derslik listesiyle gelmez. Genel Bakış'taki **"Neler eksik?"**
+kutusu ve sol menüdeki adımlar sırada ne olduğunu gösterir; okulunun derslik
+Excel'ini yükleyince 2. adım tamamlanır (bkz. Bölüm 4).
 
-### Adım 4 — Windows SmartScreen uyarısı çıkarsa
+### Adım 4 — WebView2 uyarısı çıkarsa
+
+"Bu bilgisayarda Microsoft Edge WebView2 bulunamadı" mesajı çıkarsa **Evet**'e bas;
+Microsoft'un sayfası açılır. Oradan **Evergreen Bootstrapper**'ı indirip kur,
+sonra programı yeniden aç. (Windows 11'de ve Edge kurulu Windows 10'da bu mesaj çıkmaz.)
+
+### Adım 5 — Windows SmartScreen uyarısı çıkarsa
 
 İmzasız exe olduğu için Windows "Bilgisayarınız korundu" diyebilir.
 **Ek bilgi** → **Yine de çalıştır** de. Bu bir kez sorulur.
 
-### Adım 5 — Kısayol oluştur (isteğe bağlı)
+### Adım 6 — Kısayol oluştur (isteğe bağlı)
 
 `SinavProgrami.exe` → sağ tık → **Kısayol oluştur** → kısayolu masaüstüne taşı.
 Görev çubuğuna sabitlemek için kısayola sağ tık → *Görev çubuğuna sabitle*.
@@ -91,18 +102,27 @@ Görev çubuğuna sabitlemek için kısayola sağ tık → *Görev çubuğuna sa
 
 ## BÖLÜM 3 — Program içindeki iş akışı
 
-Butonlar yukarıdan aşağıya sırayla kullanılır:
+Sol menü iş akışının kendisidir: her adımın yanında durumu görünür
+(✓ tamamlandı, numara = sıradaki / bekliyor, kilit = önceki adım bitmeden açılmaz;
+kilidin üzerine gelince nedeni yazar). Adımlar sırayla:
 
-0. **Derslik Listesi Yükle** — okulun derslik Excel'i (bir kez yeterli, bkz. Bölüm 4)
-1. **Sınav Listesi Yükle** — fakülteden gelen ham ders listesi Excel'i
-2. **Otomatik Şablon** — dersleri günlere/saatlere dağıtan şablon Excel'i üretir
-3. Şablon Excel'ini aç, gerekiyorsa elle düzelt, kaydet
-4. **Şablonu Geri Yükle** — az önce düzenlediğin şablonu geri yükle
-5. **Salonları Ata** → **Salonlu Excel Çıkart**
-6. Çıkan dosyayı kontrol et, gerekiyorsa düzelt
-7. **Gözetmen Yükle (Excel)** — araştırma görevlisi listesi
-8. **Salonlu Excel Yükle** — salon atanmış dosyayı geri yükle
-9. **Gözetmen Ata** → **Genel Dosya Çıkart** (nihai çıktı)
+1. **Dönem ve Takvim** — öğretim yılı, dönem (Güz / Bahar), sınav türü, sınav günleri ve saatleri
+2. **Derslikler** — okulun derslik Excel'i (bir kez yeterli, bkz. Bölüm 4)
+3. **Dersler** — fakülteden gelen ham ders (sınav) listesi Excel'i; sekmelerde ders listesi,
+   uygulamalı dersler, hata oranı, ortak dersler ve havuzlar
+4. **Şablon** — **Otomatik şablon oluştur** → Excel'de kontrol et / düzelt → **Şablonu geri yükle**;
+   yüklenen şablon ızgarada da düzenlenebilir, kural ihlalleri kırmızı gösterilir
+5. **Salonlar** — **Salonları ata** → **Salonlu Excel çıkar** → kontrol et → **Salonlu Excel yükle**;
+   salon matrisinde elle düzeltme yapılabilir
+6. **Gözetmenler** — gözetmen listesini yükle (tabloda düzeltilebilir) → **Gözetmenleri ata**
+7. **Final** — **Gözetmenli taslak çıkar** → düzenle → **Taslağı geri yükle** → **Final programını çıkar**
+
+Şablon, Salonlar ve Final sayfalarındaki **Excel kartı** aynı düzendedir: 1) oluştur,
+2) son dosyayı Excel'de aç / klasörde göster, 3) geri yükle.
+
+Tablolar Excel gibi kullanılır: hücreye tıkla / oklarla gez, **Enter**, **F2** ya da çift
+tıklamayla düzenle, **Esc** ile vazgeç, **Delete** ile sil; **Ctrl + fare tekerleği** ile
+yakınlaştır. Ders ve gözetmen tablolarında arama kutusu vardır.
 
 ### Sınav dönemi tipi
 
@@ -113,28 +133,29 @@ Butonlar yukarıdan aşağıya sırayla kullanılır:
 | **Bütünleme** | 5 | Sınav günü sayılır (hiçbir gün kısıtı yok) |
 | **Tek Ders** | 1 | Sınav günü sayılır (hiçbir gün kısıtı yok) |
 
-Gün sayısında **kısıt yoktur** — vize 10-15 gün de sürebilir. *"Sınav Takvimi ve
-Saat Ayarları"* bölümünden tipi seçince **Gün** kutusuna varsayılan yazılır; istediğin
-sayıyı (1–60) girip **Takvimi Doldur** dediğinde takvim o kadar gün işaretlenir.
-Takvimden tek tek gün ekleyip çıkarmak da serbesttir. Sınav türü gün sayısından
-tahmin edilmez: 10 günlük bir vize yine VİZE başlığıyla çıkar.
+Gün sayısında **kısıt yoktur** — vize 10-15 gün de sürebilir. **1 · Dönem ve Takvim**
+sayfasında tipi seçince **Gün** kutusuna varsayılan yazılır; istediğin sayıyı (1–60)
+girip **Takvimi doldur** dediğinde takvim o kadar gün işaretlenir (önce hafta özetiyle
+onay sorulur). Takvimde güne tıklayarak tek tek gün ekleyip çıkarmak ve her günün
+saatlerini seçmek serbesttir. Sınav türü gün sayısından tahmin edilmez: 10 günlük bir
+vize yine VİZE başlığıyla çıkar.
 
 ### Öğretim yılı ve dönem (zorunlu)
 
-Aynı bölümün en üst satırında **Öğretim Yılı** (ör. 2026/2027) ve **Dönem**
-(Güz / Bahar) seçilir. İkisi de boş gelir; seçilmeden Şablon Oluştur, Otomatik
-Dağıt ve Excel çıktıları çalışmaz. Final / gözetmenli Excel'in başlıkları bu
+**1 · Dönem ve Takvim** sayfasının en üstünde **Öğretim yılı** (ör. 2026/2027; listeden
+seçilir ya da yazılır) ve **Dönem** (Güz / Bahar) seçilir. İkisi de boş gelir; seçilmeden
+otomatik şablon ve Excel çıktıları çalışmaz. Final / gözetmenli Excel'in başlıkları bu
 seçimden oluşur, örn. **"2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI"**
-(VİZE / FİNAL / BÜTÜNLEME / TEK DERS kısmı *Sınav Türü* seçiminden gelir). Seçim uygulama kapatılıp
-açılınca korunur; **Uygulamayı Sıfırla** temizler.
+(VİZE / FİNAL / BÜTÜNLEME / TEK DERS kısmı *Sınav türü* seçiminden gelir). Seçim
+uygulama kapatılıp açılınca korunur; **Ayarlar → Uygulamayı sıfırla** temizler.
 
 ---
 
 ## BÖLÜM 4 — Derslik listesi
 
 Derslikler her okulda farklı olduğu için program kendi listesiyle gelmez ve
-derslikleri **veritabanında tutmaz**. Sağ sütundaki **0 · DERSLİKLER →
-🏫 Derslik Listesi Yükle** ile okulun derslik Excel'i yüklenir. Beklenen düzen:
+derslikleri **veritabanında tutmaz**. **2 · Derslikler → Derslik listesi yükle** ile
+okulun derslik Excel'i yüklenir. Beklenen düzen:
 
 | DERSLİK | SINAV DÜZEYİNDEKİ ÖĞR. SAYISI | DERS DÜZEYİNDEKİ ÖĞR. SAYISI |
 |---|---|---|
@@ -149,10 +170,10 @@ derslikleri **veritabanında tutmaz**. Sağ sütundaki **0 · DERSLİKLER →
 - Liste bir kez yüklenince uygulama kapatılıp açılsa da korunur (oturum kaydında durur).
   Değiştirmek için dosyayı yeniden yüklemen yeterli; program eklenen / silinen /
   değişen derslikleri gösterip onay ister.
-- **Uygulamayı Sıfırla** derslik listesini de siler.
+- **Uygulamayı sıfırla** derslik listesini de siler.
 
-Derslik listesi yüklenmeden *Şablon Oluştur*, *Otomatik Dağıt*, *Salonları Ata* ve
-Excel çıktıları çalışmaz; program önce listeyi yüklemeni ister.
+Derslik listesi yüklenmeden *Otomatik şablon*, *Salonları ata* ve Excel çıktıları
+çalışmaz; program önce listeyi yüklemeni ister.
 
 ---
 
@@ -160,17 +181,35 @@ Excel çıktıları çalışmaz; program önce listeyi yüklemeni ister.
 
 **Çalışma verileri.** Ders listesi, takvim, derslikler, ayarlar, atamalar ve
 gözetmenler `%AppData%\SinavProgrami\oturum.json` dosyasında saklanır; uygulama
-kapatılıp açılınca kaldığın yerden devam eder. `SinavDB.db` derslik tutmaz.
+15 saniyede bir ve kapanırken kaydeder, açılınca kaldığın yerden devam eder.
+Tema ve tablo yakınlaştırma gibi tercihler aynı klasördeki `ayarlar.json`'dadır
+(**Uygulamayı sıfırla** bunları silmez). `SinavDB.db` derslik tutmaz.
+
+**Tek pencere.** Aynı anda yalnızca bir Sınav Programı penceresi açılabilir; ikinciyi
+açmaya çalışınca "zaten açık" uyarısı çıkar (iki pencere aynı kayda yazmasın diye).
 
 **Templates klasörü.** `dagitim_sablonu.xlsx` exe'nin yanındaki `Templates\`
 klasöründe durmak zorundadır; silinirse şablon üretimi hata verir.
 
-**Pencere boyutu.** Pencere kenarından sürüklenerek büyütülebilir veya sağ üstteki
-büyüt düğmesiyle tam ekran yapılabilir. Tam ekranda sonuç paneli (Şablon / Sonuçlar /
-Matris tabloları) otomatik açılır ve ekranın geri kalanını doldurur; normal boyuta
-dönünce yine kapanır. Uygulama kapatıldığındaki pencere boyutuyla (tam ekransa tam
-ekran) açılır. Sol paneldeki bir tabloyu büyük görmek istersen bölüm başlığının
-sağındaki **⤢** düğmesine bas — ayrı, boyutlandırılabilir pencerede açılır.
+**Excel'de açık dosya.** Yazılacak dosya Excel'de açıksa program "dosya başka bir
+programda açık" der; Excel'de kapatıp tekrar dene.
+
+**Pencere boyutu.** Pencere kenarından sürüklenerek büyütülebilir veya büyüt düğmesiyle
+tam ekran yapılabilir; dar ekranda sayfalar kendini uydurur. Uygulama kapatıldığındaki
+pencere boyutuyla (tam ekransa tam ekran) ve son açık sayfayla açılır.
+
+**Hata günlüğü.** Beklenmeyen hatalar `%LocalAppData%\SinavProgrami\hata.log`
+dosyasına yazılır (**Ayarlar → Hata günlüğü → Klasörü aç**). Bir sorun bildirirken bu
+dosyayı ekleyebilirsin.
+
+**Eski arayüz (yedek).** Önceki Windows Forms arayüzü geçiş süresince yedek olarak
+duruyor: `SinavProgrami.exe --eski-arayuz` ile açılır ve aynı oturum kaydını kullanır
+(ikisi aynı anda açılamaz). Kısayolla açmak için kısayolun *Hedef* alanının sonuna
+` --eski-arayuz` ekle.
+
+**Deneme kopyası.** `SinavProgrami.exe --deneme` ile açılınca uygulama gerçek
+verine dokunmaz: `%AppData%\SinavProgrami\Deneme\` klasöründe, gerçek oturum ve hoca
+eşlemesi dosyalarının kopyalarıyla çalışır (üst çubukta **Deneme verisi** rozeti görünür).
 
 **Kod değiştirdiğinde.** Yeni sürümü almak için `yayinla.bat` dosyasını tekrar
 çalıştır. `Yayin` klasörü silinip yeniden oluşturulur; içindeki `SinavDB.db`
@@ -187,9 +226,12 @@ referans olarak duruyorlar (salon tablosu artık hiç oluşturulmuyor).
 Kod üzerinde çalışırken:
 
 ```
-dotnet run
+dotnet run                          # yeni arayüz, gerçek veri
+dotnet run -- --deneme              # yeni arayüz, deneme kopyası
+dotnet run -- --eski-arayuz         # eski arayüz
+cd Testler && dotnet run            # testler (gerçek kayda dokunmaz)
 ```
 
-Bu durumda veritabanı `bin\Debug\net8.0-windows\SinavDB.db` olarak oluşur.
+Bu durumda veritabanı `bin\Debug\net10.0-windows\SinavDB.db` olarak oluşur.
 `yayinla.bat` yalnızca dağıtılabilir sürüm üretmek içindir; geliştirme akışını
 değiştirmez.

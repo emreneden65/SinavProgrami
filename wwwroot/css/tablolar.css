@@ -1,0 +1,502 @@
+/* ═══════════════════════════════════════════════════════════════
+   TABLOLAR, ARAÇ ÇUBUKLARI, SEKMELER, DİYALOG İÇERİKLERİ
+   (renk değişkenleri app.css'teki .tema-koku tanımlarından gelir)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Özet kutuları (sayfa başında birkaç temel sayı) ── */
+.ozet-kutulari {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.ozet-kutusu {
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--mud-palette-lines-default);
+    background: var(--mud-palette-surface);
+    box-shadow: var(--kart-golge);
+}
+
+.ozet-etiketi {
+    font-size: 12.5px;
+    color: var(--mud-palette-text-secondary);
+}
+
+.ozet-degeri {
+    margin-top: 2px;
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--mud-palette-text-primary);
+}
+
+/* ── Araç çubuğu (arama + düğmeler + sayaç) ── */
+.arac-cubugu {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin-bottom: 12px;
+}
+
+.arama-kutusu {
+    flex: 0 1 320px;
+    min-width: 220px;
+}
+
+.arac-cubugu .mud-input-control {
+    margin-top: 0;
+}
+
+.arac-notu {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--mud-palette-text-secondary);
+    white-space: nowrap;
+}
+
+.bilgi-seridi {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin: -6px 0 14px;
+    font-size: 12.5px;
+    color: var(--mud-palette-text-secondary);
+}
+
+.bilgi-seridi .ayrac {
+    opacity: 0.5;
+}
+
+.sekme-aciklamasi {
+    margin: 0 0 12px;
+    max-width: 900px;
+    line-height: 1.55;
+    color: var(--mud-palette-text-secondary);
+}
+
+.mod-satiri {
+    margin-bottom: 6px;
+}
+
+/* ── Kaydırılabilir tablo kabı (başlık yapışkan) ── */
+.tablo-kabi {
+    overflow: auto;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 10px;
+    background: var(--mud-palette-surface);
+}
+
+.tablo-kabi.orta {
+    max-height: calc(100vh - 360px);
+    min-height: 220px;
+}
+
+.tablo-kabi.buyuk {
+    height: calc(100vh - 360px);
+    min-height: 300px;
+}
+
+.tablo-kabi.dar-tablo {
+    max-width: 760px;
+}
+
+.tablo-kabi:focus {
+    outline: none;
+}
+
+.tablo.yapiskan thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--mud-palette-surface);
+    box-shadow: inset 0 -1px 0 var(--mud-palette-lines-default);
+    border-bottom: 0;
+}
+
+/* Sanal kaydırma sabit satır yüksekliği varsayar: hücreler tek satır, taşan metin "…" ile kısalır */
+.tablo.duzenlenebilir tbody tr {
+    height: 37px;
+}
+
+.tablo.duzenlenebilir td {
+    white-space: nowrap;
+}
+
+.tablo td.kisaltilan {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Araç çubuğundaki seçim düğmeleri metne göre genişler (MudBlazor eşit genişlik ve 3px dolgu veriyor) */
+.arac-cubugu .mud-toggle-group {
+    display: inline-flex !important;
+    width: auto !important;
+}
+
+.arac-cubugu .mud-toggle-group .mud-toggle-item {
+    flex: 0 0 auto;
+    padding: 3px 16px !important;
+    white-space: nowrap;
+}
+
+.tablo td.kalin {
+    font-weight: 600;
+}
+
+.tablo td.soluk, .soluk {
+    color: var(--mud-palette-text-secondary);
+}
+
+.genis-sutun {
+    min-width: 260px;
+}
+
+.dar-sutun {
+    width: 1%;
+    white-space: nowrap;
+    text-align: center;
+}
+
+.secim-sutunu {
+    width: 36px;
+    text-align: center;
+}
+
+.secim-sutunu input, .secim-listesi input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--mud-palette-primary);
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.tablo-ipucu {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--mud-palette-text-secondary);
+}
+
+kbd {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: 4px;
+    border: 1px solid var(--mud-palette-lines-inputs);
+    background: var(--mud-palette-background);
+    font-family: inherit;
+    font-size: 11.5px;
+    line-height: 1.5;
+}
+
+.gorunmez {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+
+/* Sıralanabilir sütun başlığı */
+.siralama-dugmesi {
+    display: inline-flex;
+    align-items: center !important;
+    gap: 2px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-weight: inherit;
+    cursor: pointer;
+}
+
+.siralama-dugmesi .siralama-oku {
+    font-size: 15px !important;
+    opacity: 0;
+}
+
+.siralama-dugmesi:hover .siralama-oku {
+    opacity: 0.45;
+}
+
+.siralama-dugmesi.aktif {
+    color: var(--mud-palette-text-primary);
+}
+
+.siralama-dugmesi.aktif .siralama-oku {
+    opacity: 1;
+}
+
+th.sayisal .siralama-dugmesi {
+    flex-direction: row-reverse;
+}
+
+/* ── Hücre düzenleyici ── */
+.hucre-degeri {
+    display: block;
+    min-height: 24px;
+    margin: -3px -6px;
+    padding: 3px 6px;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    cursor: text;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hucre-degeri:hover {
+    border-color: var(--mud-palette-lines-inputs);
+    background: var(--mud-palette-background);
+}
+
+.hucre-degeri.bos {
+    color: var(--mud-palette-text-disabled);
+}
+
+.hucre-degeri.sayi, .hucre-kutusu.sayi {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.hucre-kutusu {
+    width: 100%;
+    min-width: 60px;
+    margin: -4px -6px;
+    padding: 3px 6px;
+    border-radius: 5px;
+    border: 1.5px solid var(--mud-palette-primary);
+    background: var(--mud-palette-surface);
+    color: var(--mud-palette-text-primary);
+    font: inherit;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(var(--mud-palette-primary-rgb), 0.16);
+}
+
+/* ── Etiketler ── */
+.etiket {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--mud-palette-lines-default);
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-secondary);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.etiket.uygulamali {
+    border-color: color-mix(in srgb, var(--adim-2) 45%, transparent);
+    background: color-mix(in srgb, var(--adim-2) 12%, transparent);
+    color: var(--adim-2);
+}
+
+.etiket.oneri {
+    margin-left: 6px;
+    border-color: color-mix(in srgb, var(--adim-3) 45%, transparent);
+    background: color-mix(in srgb, var(--adim-3) 12%, transparent);
+    color: var(--adim-3);
+}
+
+.bolum-cipleri {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+/* ── Sekmeler ── */
+.ders-sekme-kabi {
+    border-radius: 12px;
+    border: 1px solid var(--mud-palette-lines-default);
+    background: var(--mud-palette-surface);
+    box-shadow: var(--kart-golge);
+    overflow: hidden;
+}
+
+.ders-sekme-kabi .mud-tabs-tabbar {
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+    background: var(--mud-palette-surface);
+}
+
+/* Sekme adları büyük harf değil, uygulamanın geri kalanı gibi cümle düzeninde */
+.ders-sekme-kabi .mud-tab {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+    font-size: 13.5px;
+}
+
+.ders-sekmeleri {
+    padding: 18px 20px;
+}
+
+/* ── Boş durum (geniş) ── */
+.bos-durum.genis {
+    padding: 44px 24px;
+    gap: 10px;
+    line-height: 1.55;
+}
+
+.bos-durum.genis > div {
+    max-width: 640px;
+}
+
+.bos-durum-basligi {
+    font-size: 16px;
+    font-weight: 650;
+    color: var(--mud-palette-text-primary);
+}
+
+/* ── Önizleme / onay özetleri ── */
+.onizleme-ozeti p {
+    margin: 6px 0;
+    line-height: 1.5;
+}
+
+.fark-etiketi {
+    width: 1%;
+    white-space: nowrap;
+    font-weight: 600;
+    vertical-align: top !important;
+}
+
+.fark-etiketi.eklenen {
+    color: var(--basari-yazi);
+}
+
+.fark-etiketi.silinen {
+    color: var(--hata-yazi);
+}
+
+.fark-etiketi.degisen {
+    color: var(--uyari-yazi);
+}
+
+.fark-etiketi .mud-icon-root {
+    vertical-align: -4px;
+}
+
+/* ── Yardım paneli ── */
+.yardim-paneli {
+    margin-top: 16px;
+    border-radius: 12px !important;
+    border: 1px solid var(--mud-palette-lines-default);
+    overflow: hidden;
+}
+
+.ornek-tablo {
+    max-width: 720px;
+    margin: 8px 0 12px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+}
+
+.ornek-tablo td.birlesik {
+    text-align: center;
+    font-weight: 600;
+    background: var(--mud-palette-background);
+}
+
+.yardim-listesi {
+    margin: 0;
+    padding-left: 20px;
+    line-height: 1.6;
+    color: var(--mud-palette-text-secondary);
+}
+
+/* ── Uyarı listesi diyaloğu ── */
+.uyari-aciklamasi {
+    margin: 0 0 10px;
+    color: var(--mud-palette-text-secondary);
+}
+
+.uyari-listesi {
+    max-height: 50vh;
+    overflow: auto;
+    margin: 0;
+    padding: 8px 8px 8px 44px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+    background: var(--mud-palette-background);
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+}
+
+/* ── İki sütun (havuzlar) ── */
+.iki-sutun {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+}
+
+@media (max-width: 1199.98px) {
+    .iki-sutun {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.iki-sutun .kart {
+    margin-bottom: 0;
+}
+
+.secim-listesi {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+}
+
+.secim-listesi li + li {
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+.secim-listesi label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    cursor: pointer;
+}
+
+.secim-listesi label:hover {
+    background: var(--mud-palette-table-hover);
+}
+
+.havuz-listesi {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.havuz-listesi li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 4px 6px 10px;
+    border-radius: 8px;
+}
+
+.havuz-listesi li:hover {
+    background: var(--mud-palette-table-hover);
+}
+
+/* ── Form ızgarası (diyaloglar) ── */
+.form-izgarasi {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 14px;
+}
+
+.form-izgarasi .form-genis {
+    grid-column: span 3;
+}

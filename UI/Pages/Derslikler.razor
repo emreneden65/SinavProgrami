@@ -1,0 +1,241 @@
+@page "/derslikler"
+@inherits DurumaBagliBilesen
+@inject DerslikServisi Servis
+@inject IDosyaServisi Dosya
+@inject IsYurutucu IsYurutucu
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Derslikler</PageTitle>
+
+<SayfaBasligi AdimNo="2" Baslik="Derslikler" Aciklama="@IsAkisi.Adim(2).Aciklama">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="YukleAsync">
+        Derslik listesi yükle
+    </MudButton>
+</SayfaBasligi>
+
+@if (Durum.Derslikler.Count == 0)
+{
+    <section class="kart">
+        <div class="bos-durum genis">
+            <MudIcon Icon="@Icons.Material.Outlined.MeetingRoom" Size="Size.Large" />
+            <div class="bos-durum-basligi">Henüz derslik listesi yüklenmedi</div>
+            <div>Program derslik listesiyle gelmez; her okulun derslikleri farklıdır. Okulunuzun derslik Excel'ini yükleyin —
+                bir kez yüklemek yeterli, liste kayıtta saklanır.</div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="YukleAsync" Class="mt-2">
+                Derslik listesi yükle
+            </MudButton>
+        </div>
+    </section>
+}
+else
+{
+    <div class="ozet-kutulari" aria-label="Derslik özeti">
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Derslik</div>
+            <div class="ozet-degeri">@DerslikServisi.Sayi(Durum.Derslikler.Count)</div>
+        </div>
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Normal derslik</div>
+            <div class="ozet-degeri">@DerslikServisi.Sayi(Durum.Derslikler.Count(s => !s.UygulamaliMi))</div>
+        </div>
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Uygulamalı (lab / çizim)</div>
+            <div class="ozet-degeri">@DerslikServisi.Sayi(Durum.Derslikler.Count(s => s.UygulamaliMi))</div>
+        </div>
+        <div class="ozet-kutusu">
+            <div class="ozet-etiketi">Toplam sınav kapasitesi</div>
+            <div class="ozet-degeri">@DerslikServisi.Sayi(Durum.Derslikler.Sum(s => s.Kapasite))</div>
+        </div>
+    </div>
+
+    <section class="kart" aria-labelledby="baslik-derslik-listesi">
+        <div class="kart-basligi">
+            <h2 id="baslik-derslik-listesi">Derslik listesi</h2>
+            @if (Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.DerslikListesi, out var sonDosya))
+            {
+                <span class="kart-notu" title="@sonDosya">Son yüklenen: @System.IO.Path.GetFileName(sonDosya)</span>
+            }
+        </div>
+
+        <div class="arac-cubugu">
+            <MudTextField T="string" @bind-Value="_arama" Immediate="true" Placeholder="Derslik ara (ör. T4)" Variant="Variant.Outlined"
+                          Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" Class="arama-kutusu"
+                          Clearable="true" />
+            <MudToggleGroup T="string" @bind-Value="_tur" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Outlined="true" Color="Color.Primary">
+                <MudToggleItem Value="@("tumu")" Text="Tümü" />
+                <MudToggleItem Value="@("normal")" Text="Normal" />
+                <MudToggleItem Value="@("uygulamali")" Text="Uygulamalı" />
+            </MudToggleGroup>
+            <span class="arac-notu">@Gorunen().Count derslik gösteriliyor</span>
+        </div>
+
+        <div class="tablo-kabi orta">
+            <table class="tablo yapiskan">
+                <thead>
+                    <tr>
+                        <SiralanabilirBaslik Baslik="Derslik" Anahtar="kod" Sira="_sira" SiraDegisti="SiraDegistir" />
+                        <SiralanabilirBaslik Baslik="Bina" Anahtar="bina" Sira="_sira" SiraDegisti="SiraDegistir" />
+                        <SiralanabilirBaslik Baslik="Tür" Anahtar="tur" Sira="_sira" SiraDegisti="SiraDegistir" />
+                        <SiralanabilirBaslik Baslik="Sınav kapasitesi" Anahtar="kapasite" Sira="_sira" SiraDegisti="SiraDegistir" Sayisal="true" />
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var salon in Gorunen())
+                    {
+                        <tr @key="salon">
+                            <td class="kalin">@salon.SalonKodu</td>
+                            <td>@DerslikServisi.Bina(salon.SalonKodu)</td>
+                            <td>
+                                @if (salon.UygulamaliMi)
+                                {
+                                    <span class="etiket uygulamali">Uygulamalı</span>
+                                }
+                                else
+                                {
+                                    <span class="etiket">Normal</span>
+                                }
+                            </td>
+                            <td class="sayisal sag">@salon.Kapasite</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+<MudExpansionPanels Elevation="0" Class="yardim-paneli">
+    <MudExpansionPanel Text="Derslik Excel'i nasıl olmalı?">
+        <p>Okuyucu "DERSLİK" başlıklı sütunu kendisi bulur; yan yana birden çok blok (ör. T1 solda, T4 sağda) olabilir.</p>
+        <table class="tablo ornek-tablo">
+            <thead><tr><th>DERSLİK</th><th>SINAV DÜZEYİNDEKİ ÖĞR. SAYISI</th><th>DERS DÜZEYİNDEKİ ÖĞR. SAYISI</th></tr></thead>
+            <tbody>
+                <tr><td>T1-107</td><td>62(31)</td><td>155</td></tr>
+                <tr><td colspan="3" class="birlesik">TEKNİK RESİM SINIFLARI <span class="soluk">(birleşik başlık satırı)</span></td></tr>
+                <tr><td>T1-105</td><td>52</td><td>52</td></tr>
+            </tbody>
+        </table>
+        <ul class="yardim-listesi">
+            <li>Kapasite, "SINAV DÜZEYİNDEKİ" sütunundaki ilk sayıdır (<code>62(31)</code> → 62).</li>
+            <li>"LABORATUVAR", "TEKNİK RESİM", "ÇİZİM" gibi birleşik başlıkların altındaki derslikler <b>uygulamalı</b> sayılır;
+                uygulamalı dersler yalnızca bu dersliklere, diğerleri yalnızca normal dersliklere atanır.</li>
+            <li>Listeyi değiştirmek için dosyayı yeniden yüklemeniz yeterli; eklenen / silinen / değişen derslikler gösterilip onay istenir.</li>
+        </ul>
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+@code {
+    private string _arama;
+    private string _tur = "tumu";
+    private (string Anahtar, bool Artan) _sira = ("kapasite", true);
+
+    private List<Salon> Gorunen()
+    {
+        IEnumerable<Salon> liste = Durum.Derslikler;
+        if (_tur == "normal") liste = liste.Where(s => !s.UygulamaliMi);
+        else if (_tur == "uygulamali") liste = liste.Where(s => s.UygulamaliMi);
+        if (!string.IsNullOrWhiteSpace(_arama))
+            liste = liste.Where(s => (s.SalonKodu ?? "").Contains(_arama.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        Func<Salon, object> anahtar = _sira.Anahtar switch
+        {
+            "kod" => s => s.SalonKodu,
+            "bina" => s => DerslikServisi.Bina(s.SalonKodu),
+            "tur" => s => s.UygulamaliMi,
+            _ => s => s.Kapasite
+        };
+        return (_sira.Artan ? liste.OrderBy(anahtar) : liste.OrderByDescending(anahtar)).ToList();
+    }
+
+    private void SiraDegistir((string Anahtar, bool Artan) sira) => _sira = sira;
+
+    /// <summary>
+    /// Derslik Excel'ini okur, mevcut listeyle farkını gösterir ve onaylanırsa listeyi TAMAMEN
+    /// bununla değiştirir (listede olmayan eski derslikler çıkar).
+    /// </summary>
+    private async Task YukleAsync()
+    {
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.DerslikListesi, out var sonYol);
+        string yol = await Dosya.AcilacakDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = SonDosyaTurleri.DerslikListesi,
+            Baslik = "Derslik Listesi Excel'ini Seç",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        DerslikYuklemeOnizlemesi onizleme;
+        var mevcut = Durum.Derslikler.ToList();
+        try
+        {
+            onizleme = await IsYurutucu.CalistirAsync("Derslik listesi okunuyor…", () => DerslikServisi.Onizle(yol, mevcut));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Derslik listesi okunamadı", ex);
+            await Diyalog.BilgiAsync("Hata", $"Derslik listesi yüklenemedi:\n\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        if (onizleme.Bos)
+        {
+            await Diyalog.BilgiAsync("Derslik Okunamadı", "Dosyadan derslik okunamadı.\n\n" + string.Join("\n", onizleme.Uyarilar), DurumTuru.Hata);
+            return;
+        }
+
+        bool onay = await Diyalog.OnaylaAsync("Derslik Listesi — Onay", null, "Listeyi değiştir", "Vazgeç",
+            icerik: OnizlemeOzeti(onizleme), tehlikeli: onizleme.Silinen.Count > 0);
+        if (!onay) return;
+
+        Durum.SonDosyalar[SonDosyaTurleri.DerslikListesi] = yol;
+        Servis.Uygula(onizleme.Salonlar);
+        Bildirim.Add($"Derslik listesi güncellendi: {onizleme.Salonlar.Count} derslik.", Severity.Success);
+    }
+
+    private static string Liste(List<string> l) => l.Count == 0 ? "—" : string.Join(", ", l.Take(30)) + (l.Count > 30 ? " …" : "");
+
+    private RenderFragment OnizlemeOzeti(DerslikYuklemeOnizlemesi o) => @<div class="onizleme-ozeti">
+        <p>Dosyada <b>@o.Salonlar.Count derslik</b> bulundu (@o.NormalSayisi normal, @o.UygulamaliSayisi uygulamalı / lab).
+            Toplam sınav kapasitesi: <b>@DerslikServisi.Sayi(o.ToplamKapasite)</b>.</p>
+        <table class="tablo ozet-tablosu">
+            <tbody>
+                <tr>
+                    <td class="fark-etiketi eklenen"><MudIcon Icon="@Icons.Material.Outlined.Add" Size="Size.Small" /> Eklenecek (@o.Eklenen.Count)</td>
+                    <td>@Liste(o.Eklenen)</td>
+                </tr>
+                <tr>
+                    <td class="fark-etiketi silinen"><MudIcon Icon="@Icons.Material.Outlined.Remove" Size="Size.Small" /> Silinecek (@o.Silinen.Count)</td>
+                    <td>@Liste(o.Silinen)</td>
+                </tr>
+                <tr>
+                    <td class="fark-etiketi degisen"><MudIcon Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" /> Değişecek (@o.Degisen.Count)</td>
+                    <td>
+                        @if (o.Degisen.Count == 0)
+                        {
+                            <text>—</text>
+                        }
+                        else
+                        {
+                            @foreach (var d in o.Degisen.Take(20))
+                            {
+                                <div>@d</div>
+                            }
+                        }
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        @if (o.Uyarilar.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                <b>Uyarılar:</b>
+                @foreach (var u in o.Uyarilar.Take(10))
+                {
+                    <div>@u</div>
+                }
+            </MudAlert>
+        }
+        <p class="mt-3">Mevcut salon listesi bu listeyle <b>değiştirilsin mi?</b></p>
+    </div>;
+}

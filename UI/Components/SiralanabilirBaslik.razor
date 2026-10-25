@@ -1,0 +1,29 @@
+@* Tıklanınca o sütuna göre sıralayan tablo başlığı; ikinci tıklama yönü çevirir *@
+<th class="@(Sayisal ? "sayisal sag" : "") @Sinif" aria-sort="@AriaSiralama" scope="col">
+    <button type="button" class="siralama-dugmesi @(Aktif ? "aktif" : "")" @onclick="Tikla" title="@($"{Baslik} sütununa göre sırala")">
+        <span>@Baslik</span>
+        <MudIcon Icon="@(Aktif && !Sira.Artan ? Icons.Material.Outlined.ArrowDownward : Icons.Material.Outlined.ArrowUpward)"
+                 Size="Size.Small" Class="siralama-oku" />
+    </button>
+</th>
+
+@code {
+    [Parameter] public string Baslik { get; set; }
+
+    /// <summary>Bu sütunun sıralama anahtarı.</summary>
+    [Parameter] public string Anahtar { get; set; }
+
+    /// <summary>Tablonun geçerli sıralaması.</summary>
+    [Parameter] public (string Anahtar, bool Artan) Sira { get; set; }
+
+    [Parameter] public EventCallback<(string Anahtar, bool Artan)> SiraDegisti { get; set; }
+
+    [Parameter] public bool Sayisal { get; set; }
+    [Parameter] public string Sinif { get; set; }
+
+    private bool Aktif => Sira.Anahtar == Anahtar;
+
+    private string AriaSiralama => !Aktif ? "none" : Sira.Artan ? "ascending" : "descending";
+
+    private Task Tikla() => SiraDegisti.InvokeAsync((Anahtar, Aktif ? !Sira.Artan : true));
+}

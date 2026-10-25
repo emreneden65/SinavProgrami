@@ -1,0 +1,71 @@
+@inject IJSRuntime JS
+@inject ISnackbar Bildirim
+
+@* Excel gibi hücre: tıkla / Enter / F2 → düzenle · Enter ya da dışarı tıkla → kaydet · Esc → vazgeç.
+   Geçersiz değer kaydedilmez; açıklaması bildirim olarak gösterilir, hücre eski değerine döner. *@
+@if (_duzenleniyor)
+{
+    <input @ref="_kutu" class="hucre-kutusu @(Sayi ? "sayi" : "")" value="@_metin" aria-label="@Etiket"
+           inputmode="@(Sayi ? "decimal" : "text")" autocomplete="off" spellcheck="false"
+           @oninput="e => _metin = e.Value?.ToString()" @onkeydown="KutudaTus" @onkeydown:stopPropagation="true" @onblur="KaydetAsync" />
+}
+else
+{
+    <span class="hucre-degeri @(Sayi ? "sayi" : "") @(string.IsNullOrEmpty(Deger) ? "bos" : "")"
+          tabindex="0" role="button" aria-label="@($"{Etiket}: {Deger} — düzenlemek için Enter")"
+          title="Düzenlemek için tıklayın" @onclick="Duzenle" @onkeydown="HucredeTus">@(string.IsNullOrEmpty(Deger) ? "—" : Deger)</span>
+}
+
+@code {
+    [Parameter] public string Deger { get; set; }
+
+    /// <summary>Yeni değeri uygular; hata varsa açıklamasını, yoksa null döner.</summary>
+    [Parameter] public Func<string, string> Kaydet { get; set; }
+
+    [Parameter] public bool Sayi { get; set; }
+
+    /// <summary>Ekran okuyucu için sütun adı.</summary>
+    [Parameter] public string Etiket { get; set; }
+
+    private bool _duzenleniyor, _odaklanacak;
+    private string _metin;
+    private ElementReference _kutu;
+
+    private void Duzenle()
+    {
+        _metin = Deger;
+        _duzenleniyor = true;
+        _odaklanacak = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool ilkCizim)
+    {
+        if (!_odaklanacak) return;
+        _odaklanacak = false;
+        try { await JS.InvokeVoidAsync("sinavProgrami.secVeOdakla", _kutu); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void HucredeTus(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key == "F2") Duzenle();
+    }
+
+    private async Task KutudaTus(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await KaydetAsync();
+        else if (e.Key == "Escape") _duzenleniyor = false;
+    }
+
+    private Task KaydetAsync()
+    {
+        if (!_duzenleniyor) return Task.CompletedTask;
+        _duzenleniyor = false;
+        if (_metin == Deger || Kaydet == null) return Task.CompletedTask;
+
+        string hata = Kaydet(_metin);
+        if (hata != null)
+            Bildirim.Add(hata, Severity.Warning);
+        return Task.CompletedTask;
+    }
+}

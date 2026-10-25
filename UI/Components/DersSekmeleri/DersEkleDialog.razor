@@ -1,0 +1,52 @@
+@inject DersServisi Servis
+
+@* Elle ders (şube) ekleme — eski ders tablosunun en altındaki boş satırın karşılığı *@
+<MudDialog>
+    <TitleContent>
+        <div class="onay-basligi">
+            <MudIcon Icon="@Icons.Material.Outlined.Add" Color="Color.Primary" />
+            <span>Ders (şube) ekle</span>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="form-izgarasi">
+            <MudTextField T="string" Label="Ders adı" @bind-Value="_dersAdi" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          AutoFocus="true" Class="form-genis" />
+            <div class="form-genis">
+                <MudAutocomplete T="string" Label="Bölüm" @bind-Value="_bolum" SearchFunc="BolumAra" CoerceValue="true" Strict="false"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" MaxItems="20" />
+            </div>
+            <MudNumericField T="int" Label="Sınıf" @bind-Value="_sinif" Min="0" Max="9" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" Label="Şube" @bind-Value="_sube" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="3" />
+            <MudNumericField T="int" Label="Kontenjan" @bind-Value="_kontenjan" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        @if (_hata != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@_hata</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Diyalog.Cancel()">Vazgeç</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Ekle">Ekle</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Diyalog { get; set; }
+
+    private string _dersAdi, _bolum, _sube = "A", _hata;
+    private int _sinif = 1, _kontenjan;
+
+    private Task<IEnumerable<string>> BolumAra(string metin, CancellationToken iptal)
+    {
+        var secenekler = Servis.BolumSecenekleri();
+        if (string.IsNullOrWhiteSpace(metin)) return Task.FromResult<IEnumerable<string>>(secenekler);
+        return Task.FromResult<IEnumerable<string>>(DersServisi.AdlariFiltrele(secenekler, metin));
+    }
+
+    private void Ekle()
+    {
+        _hata = Servis.DersEkle(_dersAdi, _bolum, _sinif.ToString(), _sube, _kontenjan.ToString(), out var eklenen);
+        if (_hata == null) Diyalog.Close(DialogResult.Ok(eklenen));
+    }
+}

@@ -1,0 +1,50 @@
+@inject GozetmenServisi Servis
+
+@* Elle gözetmen ekleme (eski GozetmenEklemePenceresi) *@
+<MudDialog>
+    <TitleContent>
+        <div class="onay-basligi">
+            <MudIcon Icon="@Icons.Material.Outlined.PersonAdd" Color="Color.Primary" />
+            <span>Gözetmen ekle</span>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="form-izgarasi">
+            <MudTextField T="string" Label="Ad Soyad" @bind-Value="_ad" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          AutoFocus="true" Class="form-genis" />
+            <div class="form-genis">
+                <MudSelect T="string" Label="Bölüm" @bind-Value="_bolum" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                    @foreach (var b in Servis.GozetmenBolumSecenekleri())
+                    {
+                        <MudSelectItem Value="@b">@b</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+            <MudTextField T="string" Label="Kod (isteğe bağlı)" @bind-Value="_kod" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="8" />
+            <MudNumericField T="double" Label="Ağırlık" @bind-Value="_agirlik" Min="0.1" Max="10" Step="0.1" Format="0.0#"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             HelperText="Görev payı: 2,0 olan, 1,0 olanın iki katı sınava girer." Class="form-genis-2" />
+        </div>
+        @if (_hata != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@_hata</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Diyalog.Cancel()">Vazgeç</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Ekle">Ekle</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Diyalog { get; set; }
+
+    private string _ad, _bolum, _kod, _hata;
+    private double _agirlik = 1.0;
+
+    private void Ekle()
+    {
+        _hata = Servis.GozetmenEkle(_ad, _bolum, _kod, _agirlik, out var eklenen);
+        if (_hata == null) Diyalog.Close(DialogResult.Ok(eklenen));
+    }
+}

@@ -1,0 +1,137 @@
+@page "/"
+@inherits DurumaBagliBilesen
+@inject OturumYoneticisi Oturum
+@inject NavigationManager Gezgin
+
+<PageTitle>Genel Bakış</PageTitle>
+
+<SayfaBasligi Ikon="@AdimIkonlari.GenelBakis" Baslik="Genel Bakış"
+              Aciklama="Sınav programı hazırlığının durumu: hangi adımlar bitti, sırada ne var." />
+
+@if (Oturum.GeriYuklendi && !_geriYuklemeGizlendi)
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" ShowCloseIcon="true"
+              CloseIconClicked="() => { _geriYuklemeGizlendi = true; }" Class="mb-4">
+        Önceki oturum geri yüklendi@(SonKayitMetni) — kaldığınız yerden devam edebilirsiniz.
+    </MudAlert>
+}
+
+@{
+    int siradaki = IsAkisi.SiradakiAdim(Durum);
+    var eksikler = IsAkisi.Eksikler(Durum);
+}
+
+@* ── Sıradaki adım ── *@
+<section class="siradaki-karti @(siradaki > 0 ? $"adim-{siradaki}" : "bitti")">
+    @if (siradaki > 0)
+    {
+        var adim = IsAkisi.Adim(siradaki);
+        <div class="siradaki-sol">
+            <span class="siradaki-rozeti">@adim.No</span>
+            <div>
+                <div class="siradaki-etiketi">Sıradaki adım</div>
+                <div class="siradaki-adi">@adim.Ad</div>
+                <div class="siradaki-isi">@IsAkisi.SiradakiIs(Durum, siradaki)</div>
+            </div>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" EndIcon="@Icons.Material.Outlined.ArrowForward"
+                   OnClick="() => Gezgin.NavigateTo(adim.Rota)">
+            Adıma git
+        </MudButton>
+    }
+    else
+    {
+        <div class="siradaki-sol">
+            <span class="siradaki-rozeti"><MudIcon Icon="@Icons.Material.Filled.Check" /></span>
+            <div>
+                <div class="siradaki-etiketi">Tüm adımlar tamamlandı</div>
+                <div class="siradaki-isi">Final sınav programı oluşturuldu. Değişiklik yaparsanız ilgili adımı yeniden çalıştırın.</div>
+            </div>
+        </div>
+    }
+</section>
+
+<div class="genel-duzen">
+    @* ── Adım kartları ── *@
+    <section class="adim-kartlari" aria-label="İş akışı adımları">
+        @foreach (var adim in IsAkisi.Adimlar)
+        {
+            var durum = IsAkisi.Durum(Durum, adim.No);
+            <button type="button" class="@($"adim-karti adim-{adim.No} {Sinif(durum.Tur)}")" @onclick="() => Gezgin.NavigateTo(adim.Rota)"
+                    title="@(durum.Neden ?? adim.Aciklama)">
+                <span class="adim-karti-ust">
+                    <span class="adim-rozeti">
+                        @if (durum.Tur == AdimDurumTuru.Tamam)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
+                        }
+                        else if (durum.Tur == AdimDurumTuru.Kilitli)
+                        {
+                            <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" />
+                        }
+                        else
+                        {
+                            @adim.No
+                        }
+                    </span>
+                    <span class="adim-karti-ikonu"><MudIcon Icon="@AdimIkonlari.Adim(adim.No)" Size="Size.Small" /></span>
+                    <span class="durum-etiketi @Sinif(durum.Tur)">@DurumAdi(durum.Tur)</span>
+                </span>
+                <span class="adim-karti-adi">@adim.Ad</span>
+                <span class="adim-karti-ozeti">@durum.Ozet</span>
+            </button>
+        }
+    </section>
+
+    @* ── Eksikler ── *@
+    <section class="kart eksikler-karti" aria-labelledby="baslik-eksikler">
+        <div class="kart-basligi">
+            <h2 id="baslik-eksikler">Neler eksik?</h2>
+        </div>
+        @if (eksikler.Count == 0)
+        {
+            <div class="eksik-yok">
+                <MudIcon Icon="@Icons.Material.Outlined.CheckCircleOutline" Color="Color.Success" />
+                <span>Şablon için gereken her şey hazır.</span>
+            </div>
+        }
+        else
+        {
+            <ul class="eksik-listesi">
+                @foreach (var eksik in eksikler)
+                {
+                    var adim = IsAkisi.Adim(eksik.AdimNo);
+                    <li>
+                        <button type="button" class="eksik-maddesi" @onclick="() => Gezgin.NavigateTo(adim.Rota)">
+                            <MudIcon Icon="@Icons.Material.Outlined.WarningAmber" Color="Color.Warning" Size="Size.Small" />
+                            <span class="eksik-metni">@eksik.Metin</span>
+                            <span class="eksik-adimi">@adim.No · @adim.Ad</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+</div>
+
+@code {
+    private bool _geriYuklemeGizlendi;
+
+    private string SonKayitMetni => Oturum.SonKayitZamani is DateTime z ? $" (son kayıt: {z:dd.MM.yyyy HH:mm})" : "";
+
+    private static string Sinif(AdimDurumTuru tur) => tur switch
+    {
+        AdimDurumTuru.Tamam => "tamam",
+        AdimDurumTuru.Siradaki => "siradaki",
+        AdimDurumTuru.Kilitli => "kilitli",
+        _ => "bekliyor"
+    };
+
+    private static string DurumAdi(AdimDurumTuru tur) => tur switch
+    {
+        AdimDurumTuru.Tamam => "Tamamlandı",
+        AdimDurumTuru.Siradaki => "Sıradaki",
+        AdimDurumTuru.Kilitli => "Kilitli",
+        _ => "Bekliyor"
+    };
+}

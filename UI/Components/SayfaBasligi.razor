@@ -1,0 +1,34 @@
+@* Her sayfanın başı: adım numarası/simgesi, başlık, bu adımda ne yapılacağı ve sağda birincil eylemler *@
+<div class="sayfa-basligi @(AdimNo > 0 ? $"adim-{AdimNo}" : "")">
+    <div class="sayfa-basligi-sol">
+        @if (AdimNo > 0)
+        {
+            <span class="sayfa-adim-rozeti" aria-hidden="true">@AdimNo</span>
+        }
+        else if (Ikon != null)
+        {
+            <span class="sayfa-ikonu" aria-hidden="true"><MudIcon Icon="@Ikon" /></span>
+        }
+        <div>
+            <h1 tabindex="-1">@Baslik</h1>
+            @if (!string.IsNullOrEmpty(Aciklama))
+            {
+                <p class="sayfa-aciklamasi">@Aciklama</p>
+            }
+        </div>
+    </div>
+    @if (ChildContent != null)
+    {
+        <div class="sayfa-eylemleri">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter] public int AdimNo { get; set; }
+    [Parameter] public string Ikon { get; set; }
+    [Parameter] public string Baslik { get; set; }
+    [Parameter] public string Aciklama { get; set; }
+
+    /// <summary>Sağdaki birincil eylem düğmeleri.</summary>
+    [Parameter] public RenderFragment ChildContent { get; set; }
+}

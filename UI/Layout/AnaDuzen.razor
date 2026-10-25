@@ -1,0 +1,88 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject CalismaDurumu Durum
+@inject AyarlarDeposu Ayarlar
+@inject IsYurutucu IsYurutucu
+@inject OturumYoneticisi Oturum
+@inject NavigationManager Gezgin
+@inject IDialogService Diyalog
+
+@* ═══ ANA DÜZEN — üst çubuk + sol adım menüsü + sayfa + durum çubuğu ═══
+   Diyalog / açılır pencere / bildirim sağlayıcıları da tema kökünün içinde: uygulamanın
+   renk değişkenleri (adım renkleri vb.) onlarda da geçerli olsun. *@
+<MudThemeProvider Theme="@Tema.Varsayilan" IsDarkMode="@Ayarlar.Ayarlar.KoyuTema" />
+
+<div class="tema-koku @(Ayarlar.Ayarlar.KoyuTema ? "koyu" : "acik")">
+<MudPopoverProvider />
+<MudDialogProvider CloseOnEscapeKey="true" BackdropClick="false" CloseButton="true" MaxWidth="MaxWidth.Small" FullWidth="true" />
+<MudSnackbarProvider />
+
+<div class="kabuk">
+    <header class="ust-cubuk">
+        <UstCubuk />
+    </header>
+    <nav class="yan-menu" aria-label="İş akışı adımları">
+        <AdimMenusu />
+    </nav>
+    <main class="icerik">
+        <HataSiniri @ref="_hataSiniri">
+            <ChildContent>@Body</ChildContent>
+            <ErrorContent Context="hata">
+                <HataKarti Hata="@hata" Devam="HatadanDon" />
+            </ErrorContent>
+        </HataSiniri>
+    </main>
+    <footer class="durum-cubugu">
+        <DurumCubugu />
+    </footer>
+</div>
+<MesgulKatmani />
+</div>
+
+@code {
+    private HataSiniri _hataSiniri;
+
+    protected override void OnInitialized()
+    {
+        Durum.Degisti += Yenile;
+        Ayarlar.Degisti += Yenile;
+        IsYurutucu.Degisti += Yenile;
+        Gezgin.LocationChanged += SayfaDegisti;
+        SonSayfayiYaz();
+    }
+
+    // Sayfa değişince önceki sayfada kalmış hata kartı kalksın
+    protected override void OnParametersSet() => _hataSiniri?.Recover();
+
+    protected override async Task OnAfterRenderAsync(bool ilkCizim)
+    {
+        // Önceki oturum okunamadıysa açılışta bir kez söylenir
+        if (ilkCizim && Oturum.AcilisUyarisi != null)
+            await Diyalog.BilgiAsync("Oturum Geri Yükleme", Oturum.AcilisUyarisi, DurumTuru.Uyari);
+    }
+
+    private void SayfaDegisti(object gonderen, LocationChangedEventArgs e) => SonSayfayiYaz();
+
+    /// <summary>Açık sayfa oturumla saklanır; açılışta oraya dönülür.</summary>
+    private void SonSayfayiYaz()
+    {
+        string yol = Gezgin.ToBaseRelativePath(Gezgin.Uri).Split('?', '#')[0].Trim('/');
+        Durum.SonSayfa = string.IsNullOrEmpty(yol) ? null : yol;
+    }
+
+    private void HatadanDon()
+    {
+        _hataSiniri?.Recover();
+        Gezgin.NavigateTo("");
+    }
+
+    private void Yenile() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Durum.Degisti -= Yenile;
+        Ayarlar.Degisti -= Yenile;
+        IsYurutucu.Degisti -= Yenile;
+        Gezgin.LocationChanged -= SayfaDegisti;
+    }
+}

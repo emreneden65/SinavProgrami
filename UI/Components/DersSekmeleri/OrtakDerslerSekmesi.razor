@@ -1,0 +1,98 @@
+@inherits DurumaBagliBilesen
+@inject OrtakDersServisi Ortak
+
+@* Ortak dersler: işaretlenenler tüm bölümlerinde AYNI gün ve saate çivilenir *@
+@if (Ortak.Kaynak().Count == 0)
+{
+    <div class="bos-durum genis">
+        <MudIcon Icon="@Icons.Material.Outlined.Hub" Size="Size.Large" />
+        <div>Önce sınav listesini yükleyin; ortak dersler o listeden seçilir.</div>
+    </div>
+}
+else
+{
+    var adaylar = Ortak.Adaylar();
+    var gorunen = DersServisi.AdlariFiltrele(adaylar.Select(a => a.DersAdi), _arama).ToHashSet();
+    int secili = adaylar.Count(Ortak.SeciliMi);
+
+    <div class="mod-satiri">
+        <MudSwitch T="bool" Value="@Durum.OrtakSecimYapildi" ValueChanged="Ortak.ElleBelirle" Color="Color.Primary"
+                   Label="Ortak dersleri elle belirle" />
+    </div>
+    @if (Durum.OrtakSecimYapildi)
+    {
+        <p class="sekme-aciklamasi">
+            Yalnızca burada işaretlediğiniz dersler ortak kabul edilir ve tüm bölümlerinde <b>aynı gün ve saate</b> konur.
+            Otomatik tespit kapalıdır.
+        </p>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            Otomatik mod: ortak dersler her adımda kendi kuralıyla belirlenir (birden çok bölümde okutulan / kodu bölüm önekiyle
+            başlamayan dersler). Aşağıdaki işaretler yalnızca öneridir; seçimi kendiniz yapmak için anahtarı açın.
+        </MudAlert>
+    }
+
+    <div class="arac-cubugu">
+        <MudTextField T="string" @bind-Value="_arama" Immediate="true" DebounceInterval="150" Placeholder="Ders ara"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="arama-kutusu" />
+        @if (Durum.OrtakSecimYapildi)
+        {
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="Ortak.OnerilenleriIsaretle">
+                Önerilenleri işaretle (≥2 bölüm)
+            </MudButton>
+            <MudButton Variant="Variant.Text" OnClick="Ortak.SecimiTemizle">Temizle</MudButton>
+        }
+        <span class="arac-notu">@secili ders ortak@(Durum.OrtakSecimYapildi ? "" : " (öneri)")</span>
+    </div>
+
+    <div class="tablo-kabi orta">
+        <table class="tablo yapiskan">
+            <thead>
+                <tr>
+                    <th class="secim-sutunu" scope="col"><span class="gorunmez">Ortak</span></th>
+                    <th scope="col">Kod</th>
+                    <th scope="col">Ders adı</th>
+                    <th scope="col">Okutulduğu bölümler</th>
+                    <th scope="col" class="sayisal sag">Toplam kontenjan</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var aday in adaylar.Where(a => gorunen.Contains(a.DersAdi)))
+                {
+                    bool isaretli = Ortak.SeciliMi(aday);
+                    string satirAnahtari = aday.DersKodu + "|" + aday.DersAdi;
+                    <tr @key="satirAnahtari" class="@(isaretli ? "secili" : "")">
+                        <td class="secim-sutunu">
+                            <input type="checkbox" checked="@isaretli" disabled="@(!Durum.OrtakSecimYapildi)"
+                                   @onchange="e => Ortak.Ayarla(aday, (bool)e.Value)" aria-label="@($"{aday.DersAdi} ortak ders")" />
+                        </td>
+                        <td class="soluk sayisal">@aday.DersKodu</td>
+                        <td>
+                            @aday.DersAdi
+                            @if (aday.Onerilen)
+                            {
+                                <span class="etiket oneri" title="Birden çok bölümde okutuluyor">öneri</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="bolum-cipleri">
+                                @foreach (var b in aday.Bolumler)
+                                {
+                                    <span class="etiket">@b</span>
+                                }
+                            </div>
+                        </td>
+                        <td class="sayisal sag">@aday.ToplamKontenjan</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private string _arama;
+}

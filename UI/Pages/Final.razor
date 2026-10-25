@@ -1,0 +1,182 @@
+@page "/final"
+@inherits DurumaBagliBilesen
+@inject FinalServisi Servis
+@inject IDosyaServisi Dosya
+@inject IsYurutucu IsYurutucu
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Final</PageTitle>
+
+<SayfaBasligi AdimNo="7" Baslik="Final" Aciklama="@IsAkisi.Adim(7).Aciklama" />
+
+@{
+    Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.GozetmenliTaslak, out var taslak);
+    Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.Final, out var final);
+}
+
+<ExcelGidisDonus Baslik="Gözetmenli taslak"
+                 Not="Taslakta öğrenci sayılarını ve gözetmen adlarını elle düzeltebilirsiniz."
+                 OlusturBasligi="Gözetmenli taslağı çıkarın"
+                 OlusturAciklamasi="Salon ve gözetmen atamalarıyla çok sayfalı program Excel'i hazırlanır."
+                 OlusturMetni="Gözetmenli taslak çıkar"
+                 OlusturKapaliNedeni="@(Durum.Kilitler.MatrisExport ? null : "Önce 6. adımda gözetmenleri atayın.")"
+                 Olustur="() => MatrisExceliAsync(taslak: true)"
+                 SonDosya="@taslak"
+                 GeriYukleBasligi="Taslağı geri yükleyin"
+                 GeriYukleAciklamasi="@($"Düzenlediğiniz taslağı yükleyin; '{GozetmenliSablonOkuyucu.SayfaAdi}' sayfasındaki değişiklikler programa işlenir.")"
+                 GeriYukleMetni="Taslağı geri yükle"
+                 GeriYukleKapaliNedeni="@(Durum.Kilitler.GozetmenliYukle ? null : "Önce gözetmenli taslağı çıkarın.")"
+                 GeriYukle="TaslagiYukleAsync" />
+
+<section class="kart final-karti adim-7" aria-labelledby="baslik-final">
+    <div class="kart-basligi">
+        <h2 id="baslik-final">Final sınav programı</h2>
+        @if (final != null)
+        {
+            <span class="kart-notu">Oluşturuldu</span>
+        }
+    </div>
+    <div class="eylem-satiri">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.TaskAlt"
+                   Disabled="@(!Durum.Kilitler.FinalExport)" OnClick="() => MatrisExceliAsync(taslak: false)">
+            Final programını çıkar
+        </MudButton>
+        @if (!Durum.Kilitler.FinalExport)
+        {
+            <span class="gd-neden"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" />
+                @(Durum.Kilitler.GozetmenliYukle ? "Önce düzenlediğiniz taslağı geri yükleyin." : "Önce gözetmenli taslağı çıkarıp geri yükleyin.")</span>
+        }
+        else
+        {
+            <span class="eylem-aciklamasi">Geri yüklenen taslaktaki son haliyle, dağıtıma hazır program Excel'i hazırlanır.</span>
+        }
+    </div>
+    @if (final != null)
+    {
+        <div class="final-dosyasi">
+            <div class="gd-dosya" title="@final">
+                <MudIcon Icon="@Icons.Material.Outlined.Description" Size="Size.Small" />
+                <span>@System.IO.Path.GetFileName(final)</span>
+            </div>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.OpenInNew" OnClick="() => Ac(final)">Excel'de aç</MudButton>
+            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.FolderOpen" OnClick="() => Dosya.KlasordeGoster(final)">Klasörde göster</MudButton>
+        </div>
+    }
+</section>
+
+<MudExpansionPanels Elevation="0" Class="yardim-paneli">
+    <MudExpansionPanel Text="Taslakta neleri düzenleyebilirim?">
+        <ul class="yardim-listesi">
+            <li>Düzenlemeleri taslağın <b>@GozetmenliSablonOkuyucu.SayfaAdi</b> sayfasında yapın.</li>
+            <li>Salon hücresinin 1. satırı öğrenci sayısı, 2. satırı gözetmen adıdır; ikisini de değiştirebilirsiniz.</li>
+            <li>Kaydedip <b>Taslağı geri yükle</b>'ye basın: değişen satırlar programa işlenir, <b>Final programını çıkar</b> açılır.</li>
+            <li>Gözetmenleri yeniden atarsanız (6. adım) önceki taslak geçersizleşir; taslağı yeniden çıkarın.</li>
+        </ul>
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+@code {
+    private void Ac(string yol)
+    {
+        if (!System.IO.File.Exists(yol))
+        {
+            Bildirim.Add("Dosya bulunamadı; taşınmış ya da silinmiş olabilir.", Severity.Warning);
+            return;
+        }
+        Dosya.DosyayiAc(yol);
+    }
+
+    /// <summary>Gözetmenli taslak ya da final Excel'i (eski BtnMatrisExport_Click / BtnFinalExport_Click).</summary>
+    private async Task MatrisExceliAsync(bool taslak)
+    {
+        string eksik = Servis.MatrisExcelEksigi();
+        if (eksik != null)
+        {
+            await Diyalog.BilgiAsync("Eksik Bilgi", eksik, DurumTuru.Uyari);
+            return;
+        }
+
+        string anahtar = taslak ? SonDosyaTurleri.GozetmenliTaslak : SonDosyaTurleri.Final;
+        Durum.SonDosyalar.TryGetValue(anahtar, out var sonYol);
+        string yol = await Dosya.KaydedilecekDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = anahtar,
+            Baslik = taslak ? "Gözetmenli Taslak Excel'i Kaydet" : "Final Sınav Programını Kaydet",
+            OnerilenAd = FinalServisi.OnerilenAd(taslak),
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        try
+        {
+            // Sonuçlar salonlu Excel'den okunmuş olabilir (hoca sütunu yok) — kalıcı eşlemeden tamamlanır
+            Servis.OgretimElemanlariniDoldur();
+            await IsYurutucu.CalistirAsync("Matris Excel dosyası oluşturuluyor…", () => Servis.MatrisExceliYaz(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Matris Excel'i yazılamadı", ex);
+            Durum.DurumYaz("❌ Excel export başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Matris Excel export hatası:\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        Servis.MatrisExceliYazildi(yol, taslak);
+        string ipucu = taslak
+            ? $"\n\nDüzenlemeleri '{GozetmenliSablonOkuyucu.SayfaAdi}' sayfasında yapın (salon hücresi: 1. satır öğrenci sayısı, " +
+              "2. satır gözetmen adı), sonra 'Taslağı geri yükle' ile geri yükleyin."
+            : "";
+        if (await Diyalog.OnaylaAsync("Dışa Aktarma Başarılı", $"Sınav programı başarıyla dışa aktarıldı:\n\n📁 {System.IO.Path.GetFileName(yol)}{ipucu}",
+                "Excel'de aç", "Kapat", tur: DurumTuru.Basari))
+            Dosya.DosyayiAc(yol);
+    }
+
+    /// <summary>Düzenlenmiş gözetmenli taslağı geri yükler (eski BtnGozetmenliYukle_Click).</summary>
+    private async Task TaslagiYukleAsync()
+    {
+        string eksik = Servis.TaslakYuklemeEksigi();
+        if (eksik != null)
+        {
+            await Diyalog.BilgiAsync("Uyarı", eksik, DurumTuru.Uyari);
+            return;
+        }
+
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.GozetmenliTaslak, out var sonYol);
+        string yol = await Dosya.AcilacakDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = "TaslakGeriYukle",
+            Baslik = "Düzenlenmiş Gözetmenli Dosyayı Seç",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        GozetmenliSablonOkuyucu.Sonuc okuma;
+        try
+        {
+            okuma = await IsYurutucu.CalistirAsync("Düzenlenmiş dosya okunuyor…", () => FinalServisi.TaslagiOku(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Gözetmenli taslak okunamadı", ex);
+            Durum.DurumYaz("❌ Düzenlenmiş dosya yüklenemedi!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Dosya okunamadı:\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        if (okuma.Satirlar.Count == 0)
+        {
+            Durum.DurumYaz("❌ Düzenlenmiş dosya okunamadı!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", "Dosyadan hiç ders satırı okunamadı.\n\n" + string.Join("\n", okuma.Uyarilar), DurumTuru.Hata);
+            return;
+        }
+
+        var sonuc = Servis.TaslagiUygula(okuma, yol);
+        Bildirim.Add($"{sonuc.Guncellenen} sınav satırı güncellendi.", sonuc.Guncellenen > 0 ? Severity.Success : Severity.Warning);
+        if (sonuc.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Okuma Uyarıları", sonuc.Uyarilar, $"{sonuc.Guncellenen} sınav satırı güncellendi. Uyarılar:");
+    }
+}

@@ -1,9 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<!-- Razor SDK: yeni arayüz Blazor (Razor bileşenleri) ile yazılır ve WinForms penceresindeki
+     BlazorWebView içinde çalışır. Eski WinForms arayüzü (MainForm) geçiş süresince aynen derlenir. -->
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
+    <!-- .NET 10 (LTS, Kasım 2028'e kadar destekli). .NET 8 desteği 10 Kasım 2026'da bitiyor;
+         Blazor masaüstü (BlazorWebView) paketinin güncel sürümü de .NET 10 istiyor. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Kod tabanının tamamı null denetimi kapalı yazılmıştır (her .cs dosyası #nullable disable ile başlar);
+         Razor bileşenleri de aynı kuralla derlenir. -->
+    <Nullable>disable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
 
@@ -22,6 +28,10 @@
     <!-- Yayınlarken WinForms + EPPlus reflection kullandığı için trimming KAPALI kalmalı -->
     <PublishTrimmed>false</PublishTrimmed>
     <SatelliteResourceLanguages>tr;en</SatelliteResourceLanguages>
+
+    <!-- yayinla.bat'ın ürettiği Yayin\ klasörü (içinde wwwroot ve .json dosyaları var)
+         proje klasöründe durduğu için derlemeye karışmasın. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);Yayin\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,6 +39,13 @@
     <!-- Taşınabilir veritabanı: sunucu gerektirmeyen, tek dosyalık SQLite.
          Bundle paketi native e_sqlite3 kütüphanesini de beraberinde getirir. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.27" />
+    <!-- Microsoft.Data.Sqlite 8.0.27 dolaylı olarak e_sqlite3 2.1.6'yı getiriyor; o sürüm
+         CVE-2025-6965 (GHSA-2m69-gcr7-jv3q) açığını taşıyor. Düzeltilmiş sürüm doğrudan seçilir. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
+    <!-- Yeni arayüz: WinForms penceresinde Blazor (WebView2) + Material bileşen kütüphanesi.
+         Tüm CSS/JS paketle birlikte gelir; internet gerekmez. -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="10.0.110" />
+    <PackageReference Include="MudBlazor" Version="9.11.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +63,16 @@
     <Compile Remove="Testler\**" />
     <EmbeddedResource Remove="Testler\**" />
     <None Remove="Testler\**" />
+    <Content Remove="Testler\**" />
   </ItemGroup>
+
+  <!-- WebView2 paketi .NET 5+ projelerine WinForms kütüphanesinin yanında WPF kütüphanesini de
+       koşulsuz ekliyor; bu WinForms uygulaması onu kullanmıyor, ama WindowsBase sürüm çakışması
+       uyarısına (MSB3277) yol açıyor. Derlemeye girmeden çıkarılır. -->
+  <Target Name="WebView2WpfBasvurusunuCikar" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

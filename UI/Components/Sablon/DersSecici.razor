@@ -1,0 +1,139 @@
+@inject IJSRuntime JS
+
+@* Şablon ızgarasındaki "Ders adı" hücresinin düzenleyicisi: yazarak arama + bölümün ders listesi.
+   ↑/↓ seçer · Enter uygular · Esc vazgeçer · boş seçim dersi hücreden çıkarır. Liste, tablo kabının
+   kaydırma alanına kırpılmasın diye sabit konumla (position: fixed) kutunun altına yerleştirilir. *@
+<div class="ders-secici">
+    <input @ref="_kutu" class="hucre-kutusu" value="@_metin" aria-label="Ders adı" autocomplete="off" spellcheck="false"
+           role="combobox" aria-expanded="true" aria-controls="@_listeId" aria-activedescendant="@(_vurgu >= 0 ? $"{_listeId}-{_vurgu}" : null)"
+           @oninput="Yazildi" @onkeydown="Tus" @onkeydown:stopPropagation="true" @onblur="() => Vazgecildi.InvokeAsync()" />
+    <ul @ref="_liste" id="@_listeId" class="ders-secici-listesi" role="listbox" @onmousedown:preventDefault="true">
+        @if (_gorunen.Count == 0)
+        {
+            <li class="bos">Eşleşen ders yok — tam adı yazıp Enter'a basabilirsiniz.</li>
+        }
+        @for (int i = 0; i < _gorunen.Count; i++)
+        {
+            var oge = _gorunen[i];
+            int sira = i;
+            <li id="@($"{_listeId}-{sira}")" role="option" aria-selected="@(sira == _vurgu ? "true" : "false")"
+                class="@(sira == _vurgu ? "vurgulu" : "") @(oge.Bosalt ? "bosalt" : "")"
+                @onmouseover="() => _vurgu = sira" @onclick="() => Sec(oge)">
+                @if (oge.Bosalt)
+                {
+                    <MudIcon Icon="@Icons.Material.Outlined.Backspace" Size="Size.Small" />
+                    <span class="ad">Hücreyi boşalt (dersi şablondan çıkar)</span>
+                }
+                else
+                {
+                    <span class="ad">@oge.DersAdi</span>
+                    <span class="sinif">@oge.Sinif. sınıf</span>
+                    @if (oge.Burada)
+                    {
+                        <span class="yer burada">bu hücrede</span>
+                    }
+                    else if (oge.Yer != null)
+                    {
+                        <span class="yer" title="Seçerseniz dersin tüm şubeleri buraya taşınır">şu an @oge.Yer · taşınır</span>
+                    }
+                }
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    /// <summary>Bölümün seçilebilir dersleri (ders adı, sınıf).</summary>
+    [Parameter] public List<(string DersAdi, int Sinif)> Secenekler { get; set; }
+
+    /// <summary>Hücredeki mevcut ders (yoksa null).</summary>
+    [Parameter] public string MevcutDers { get; set; }
+    [Parameter] public int MevcutSinif { get; set; }
+
+    /// <summary>Dersin şablondaki şu anki yeri ("12.01 09:00"); yerleşmemişse null.</summary>
+    [Parameter] public Func<string, int, string> YerBul { get; set; }
+
+    /// <summary>Kutu açılırken yazılmış ilk metin (hücrede harfe basılarak açıldıysa).</summary>
+    [Parameter] public string IlkMetin { get; set; }
+
+    /// <summary>Seçim: "DERS | n. Sınıf" biçimi, serbest metin ya da boş (çıkar).</summary>
+    [Parameter] public EventCallback<string> Secildi { get; set; }
+    [Parameter] public EventCallback Vazgecildi { get; set; }
+
+    private sealed record Oge(string DersAdi, int Sinif, bool Bosalt, bool Burada, string Yer);
+
+    private readonly string _listeId = $"ds-{Guid.NewGuid():N}";
+    private ElementReference _kutu, _liste;
+    private string _metin;
+    private List<Oge> _tumu = new(), _gorunen = new();
+    private int _vurgu = -1;
+
+    protected override void OnInitialized()
+    {
+        _tumu = new List<Oge>();
+        if (MevcutDers != null) _tumu.Add(new Oge(null, 0, true, false, null));
+        foreach (var (ad, sinif) in Secenekler ?? new())
+        {
+            bool burada = MevcutDers != null && string.Equals(ad, MevcutDers, StringComparison.OrdinalIgnoreCase) && sinif == MevcutSinif;
+            _tumu.Add(new Oge(ad, sinif, false, burada, burada ? null : YerBul?.Invoke(ad, sinif)));
+        }
+        _metin = IlkMetin ?? MevcutDers ?? "";
+        Suz(IlkMetin);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool ilk)
+    {
+        try
+        {
+            if (ilk)
+            {
+                if (IlkMetin != null) await JS.InvokeVoidAsync("sinavProgrami.sonaOdakla", _kutu);
+                else await JS.InvokeVoidAsync("sinavProgrami.secVeOdakla", _kutu);
+            }
+            await JS.InvokeVoidAsync("sinavProgrami.altinaYerlestir", _kutu, _liste, _vurgu);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>Yazılan metne göre listeyi süzer; ilk açılışta (metin yokken) mevcut ders vurgulanır.</summary>
+    private void Suz(string filtre)
+    {
+        filtre = filtre?.Trim();
+        var ci = System.Globalization.CultureInfo.GetCultureInfo("tr-TR").CompareInfo;
+        _gorunen = string.IsNullOrEmpty(filtre)
+            ? _tumu
+            : _tumu.Where(o => !o.Bosalt && ci.IndexOf(o.DersAdi, filtre, System.Globalization.CompareOptions.IgnoreCase) >= 0)
+                   .OrderBy(o => ci.IsPrefix(o.DersAdi, filtre, System.Globalization.CompareOptions.IgnoreCase) ? 0 : 1)
+                   .ToList();
+        _vurgu = string.IsNullOrEmpty(filtre) ? _gorunen.FindIndex(o => o.Burada) : (_gorunen.Count > 0 ? 0 : -1);
+    }
+
+    private void Yazildi(ChangeEventArgs e)
+    {
+        _metin = e.Value?.ToString() ?? "";
+        Suz(_metin);
+    }
+
+    private async Task Tus(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                if (_gorunen.Count > 0) _vurgu = (_vurgu + 1) % _gorunen.Count;
+                break;
+            case "ArrowUp":
+                if (_gorunen.Count > 0) _vurgu = _vurgu <= 0 ? _gorunen.Count - 1 : _vurgu - 1;
+                break;
+            case "Enter":
+                if (_vurgu >= 0 && _vurgu < _gorunen.Count) await Sec(_gorunen[_vurgu]);
+                else await Secildi.InvokeAsync(_metin);   // boş metin = çıkar; serbest metin hizmette eşlenir
+                break;
+            case "Escape":
+                await Vazgecildi.InvokeAsync();
+                break;
+        }
+    }
+
+    private Task Sec(Oge oge)
+        => Secildi.InvokeAsync(oge.Bosalt ? "" : SinavProgrami.Services.SablonServisi.DersItemYap(oge.DersAdi, oge.Sinif));
+}

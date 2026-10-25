@@ -1,0 +1,68 @@
+@inherits DurumaBagliBilesen
+
+@* Sol menü = iş akışı. Her adımın yanında durumu: ✓ tamamlandı, ● sıradaki, 🔒 kilitli. *@
+<div class="menu-bolumu">
+    <NavLink class="menu-ogesi genel" href="" Match="NavLinkMatch.All" title="Genel Bakış">
+        <span class="menu-ikonu"><MudIcon Icon="@AdimIkonlari.GenelBakis" Size="Size.Small" /></span>
+        <span class="menu-metni"><span class="menu-adi">Genel Bakış</span></span>
+    </NavLink>
+</div>
+
+<div class="menu-basligi">İş akışı</div>
+<ol class="menu-bolumu adimlar">
+    @foreach (var adim in IsAkisi.Adimlar)
+    {
+        var durum = IsAkisi.Durum(Durum, adim.No);
+        <li>
+            <NavLink class="@($"menu-ogesi adim adim-{adim.No} {Sinif(durum.Tur)}")" href="@adim.Rota"
+                     title="@IpucuMetni(adim, durum)" aria-label="@($"{adim.No}. adım: {adim.Ad} — {DurumAdi(durum.Tur)}")">
+                <span class="adim-rozeti" aria-hidden="true">
+                    @switch (durum.Tur)
+                    {
+                        case AdimDurumTuru.Tamam:
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
+                            break;
+                        case AdimDurumTuru.Kilitli:
+                            <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" />
+                            break;
+                        default:
+                            <span>@adim.No</span>
+                            break;
+                    }
+                </span>
+                <span class="menu-metni">
+                    <span class="menu-adi">@adim.Ad</span>
+                    <span class="menu-ozeti">@durum.Ozet</span>
+                </span>
+            </NavLink>
+        </li>
+    }
+</ol>
+
+<div class="menu-alt">
+    <NavLink class="menu-ogesi" href="ayarlar" title="Ayarlar">
+        <span class="menu-ikonu"><MudIcon Icon="@AdimIkonlari.Ayarlar" Size="Size.Small" /></span>
+        <span class="menu-metni"><span class="menu-adi">Ayarlar</span></span>
+    </NavLink>
+</div>
+
+@code {
+    private static string Sinif(AdimDurumTuru tur) => tur switch
+    {
+        AdimDurumTuru.Tamam => "tamam",
+        AdimDurumTuru.Siradaki => "siradaki",
+        AdimDurumTuru.Kilitli => "kilitli",
+        _ => "bekliyor"
+    };
+
+    private static string DurumAdi(AdimDurumTuru tur) => tur switch
+    {
+        AdimDurumTuru.Tamam => "tamamlandı",
+        AdimDurumTuru.Siradaki => "sıradaki adım",
+        AdimDurumTuru.Kilitli => "kilitli",
+        _ => "bekliyor"
+    };
+
+    private static string IpucuMetni(AdimTanimi adim, AdimDurumBilgisi durum)
+        => $"{adim.No} · {adim.Ad} — {DurumAdi(durum.Tur)}\n{durum.Ozet}" + (durum.Neden != null ? $"\n🔒 {durum.Neden}" : "");
+}

@@ -1,0 +1,133 @@
+@inherits DurumaBagliBilesen
+@inject OrtakDersServisi Ortak
+@inject ISnackbar Bildirim
+
+@* Havuz: bir ders için farklı bölümlerden seçilen şubeler salon atamasında tek kontenjan gibi birleştirilir *@
+@if (Ortak.Kaynak().Count == 0)
+{
+    <div class="bos-durum genis">
+        <MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Large" />
+        <div>Önce sınav listesini yükleyin; havuz üyeleri (bölüm / şube / kontenjan) o listeden seçilir.</div>
+    </div>
+}
+else
+{
+    var dersler = Ortak.HavuzDersleri();
+    <p class="sekme-aciklamasi">
+        Bir ders için farklı bölümlerden seçtiğiniz şubeler, salon atamasında <b>tek kontenjan</b> gibi birleştirilip mümkünse
+        aynı salona konur. Yalnızca en az iki farklı bölüm / şubesi olan dersler listelenir.
+    </p>
+
+    <div class="iki-sutun">
+        <section class="kart" aria-labelledby="baslik-yeni-havuz">
+            <div class="kart-basligi"><h2 id="baslik-yeni-havuz">Yeni havuz</h2></div>
+            @if (dersler.Count == 0)
+            {
+                <div class="soluk">Havuz kurulabilecek ders yok (hiçbir dersin iki farklı bölüm / şubesi bulunmuyor).</div>
+            }
+            else
+            {
+                <MudSelect T="string" Label="Ders" Value="@_ders" ValueChanged="DersSecildi" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           AnchorOrigin="Origin.BottomCenter" MaxHeight="360">
+                    @foreach (var d in dersler)
+                    {
+                        <MudSelectItem T="string" Value="@d">@d</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (_ders != null)
+                {
+                    <div class="alan-etiketi mt-3">Havuza alınacak şubeleri seçin (en az 2):</div>
+                    <ul class="secim-listesi">
+                        @foreach (var sube in Ortak.HavuzSubeleri(_ders))
+                        {
+                            string anahtar = Anahtar(sube);
+                            <li @key="anahtar">
+                                <label>
+                                    <input type="checkbox" checked="@_secili.Contains(anahtar)" @onchange="e => Sec(anahtar, (bool)e.Value)" />
+                                    <span>@sube</span>
+                                </label>
+                            </li>
+                        }
+                    </ul>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add"
+                               Disabled="@(_secili.Count < 2)" OnClick="Olustur" Class="mt-2">
+                        Havuz oluştur@(_secili.Count > 0 ? $" ({_secili.Count} şube)" : "")
+                    </MudButton>
+                }
+            }
+        </section>
+
+        <section class="kart" aria-labelledby="baslik-havuzlar">
+            <div class="kart-basligi"><h2 id="baslik-havuzlar">Tanımlı havuzlar (@Durum.SablonHavuzlari.Count)</h2></div>
+            @if (Durum.SablonHavuzlari.Count == 0)
+            {
+                <div class="soluk">Henüz havuz tanımlanmadı.</div>
+            }
+            else
+            {
+                <ul class="havuz-listesi">
+                    @foreach (var havuz in Durum.SablonHavuzlari)
+                    {
+                        <li @key="havuz.HavuzId">
+                            <span>@OrtakDersServisi.HavuzMetni(havuz)</span>
+                            <MudTooltip Text="Havuzu sil">
+                                <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline" Size="Size.Small" OnClick="() => Sil(havuz)"
+                                               aria-label="@($"{havuz.DersAdi} havuzunu sil")" />
+                            </MudTooltip>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private string _ders;
+    private readonly HashSet<string> _secili = new();
+
+    private static string Anahtar(HavuzSubeSecim s) => $"{s.Bolum}|{s.Sinif}|{s.Sube}";
+
+    private void DersSecildi(string ders)
+    {
+        _ders = ders;
+        _secili.Clear();
+    }
+
+    private void Sec(string anahtar, bool secili)
+    {
+        if (secili) _secili.Add(anahtar);
+        else _secili.Remove(anahtar);
+    }
+
+    private void Olustur()
+    {
+        var secilenler = Ortak.HavuzSubeleri(_ders).Where(s => _secili.Contains(Anahtar(s))).ToList();
+        string hata = Ortak.HavuzOlustur(_ders, secilenler);
+        if (hata != null)
+        {
+            Bildirim.Add(hata, Severity.Warning);
+            return;
+        }
+        Bildirim.Add($"'{_ders}' için {secilenler.Count} şubelik havuz oluşturuldu.", Severity.Success);
+        _secili.Clear();
+    }
+
+    private void Sil(DersHavuzu havuz)
+    {
+        int sira = Durum.SablonHavuzlari.IndexOf(havuz);
+        Ortak.HavuzSil(havuz);
+        Bildirim.Add($"'{havuz.DersAdi}' havuzu silindi.", Severity.Normal, secenek =>
+        {
+            secenek.Action = "Geri al";
+            secenek.ActionColor = Color.Primary;
+            secenek.OnClick = _ =>
+            {
+                Durum.SablonHavuzlari.Insert(Math.Min(sira, Durum.SablonHavuzlari.Count), havuz);
+                Durum.Bildir();
+                return Task.CompletedTask;
+            };
+        });
+    }
+}

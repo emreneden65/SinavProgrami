@@ -1,0 +1,282 @@
+@page "/donem"
+@inherits DurumaBagliBilesen
+@inject TakvimServisi Takvim
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Dönem ve Takvim</PageTitle>
+
+<SayfaBasligi AdimNo="1" Baslik="Dönem ve Takvim" Aciklama="@IsAkisi.Adim(1).Aciklama" />
+
+@* ── 1) Öğretim dönemi ── *@
+<section class="kart" aria-labelledby="baslik-donem">
+    <div class="kart-basligi">
+        <h2 id="baslik-donem">Öğretim dönemi</h2>
+        <span class="kart-notu">Excel başlıkları bu seçimden oluşur; çıktı almadan önce seçilmesi zorunludur.</span>
+    </div>
+
+    <div class="alan-satiri">
+        <div class="alan yil-alani">
+            <MudTextField T="string" Label="Öğretim yılı" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Value="@Durum.OgretimYiliMetni" ValueChanged="Takvim.OgretimYiliMetniniAyarla" Immediate="true"
+                          OnBlur="_ => Takvim.OgretimYiliMetniniDuzelt()" Placeholder="2026/2027"
+                          Error="@Takvim.OgretimYiliGecersiz"
+                          ErrorText="Geçersiz yıl — 2026/2027 biçiminde yazın (ikinci yıl birinciden 1 fazla)"
+                          HelperText="Listeden seçin ya da yazın" />
+            <div class="oneri-cipleri" aria-label="Öğretim yılı önerileri">
+                @foreach (var yil in TakvimServisi.OgretimYiliSecenekleri())
+                {
+                    <button type="button" class="oneri-cipi @(Durum.OgretimYiliMetni == yil ? "secili" : "")"
+                            @onclick="() => Takvim.OgretimYiliMetniniAyarla(yil)">@yil</button>
+                }
+            </div>
+        </div>
+
+        <div class="alan">
+            <div class="alan-etiketi" id="etiket-donem">Dönem</div>
+            <MudToggleGroup T="Yariyil?" Value="@Durum.Yariyil" ValueChanged="Takvim.YariyilSec" SelectionMode="SelectionMode.SingleSelection"
+                            Color="Color.Primary" Size="Size.Small" Outlined="true" aria-labelledby="etiket-donem">
+                <MudToggleItem Value="@((Yariyil?)Yariyil.Guz)" Text="Güz" />
+                <MudToggleItem Value="@((Yariyil?)Yariyil.Bahar)" Text="Bahar" />
+            </MudToggleGroup>
+            @if (Durum.Yariyil == null)
+            {
+                <div class="alan-uyarisi">Seçilmedi</div>
+            }
+        </div>
+
+        <div class="alan tur-alani">
+            <MudSelect T="SinavDonemTipi" Label="Sınav türü" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Value="@Durum.SinavTipi" ValueChanged="Takvim.SinavTipiSec">
+                @foreach (var tip in SinavTipi.Tumu())
+                {
+                    <MudSelectItem T="SinavDonemTipi" Value="@tip">@SinavTipi.Ad(tip)</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </div>
+
+    <div class="baslik-onizlemesi @(Takvim.ProgramBasligiOnizlemesi == null ? "bos" : "")">
+        <span class="onizleme-etiketi">Excel başlığı</span>
+        @if (Takvim.ProgramBasligiOnizlemesi is string baslik)
+        {
+            <span class="onizleme-metni">@baslik</span>
+        }
+        else
+        {
+            <span class="onizleme-metni">Öğretim yılı ve dönem seçilince burada görünür.</span>
+        }
+    </div>
+</section>
+
+@* ── 2) Takvimi otomatik doldur ── *@
+<section class="kart" aria-labelledby="baslik-doldur">
+    <div class="kart-basligi">
+        <h2 id="baslik-doldur">Takvimi otomatik doldur</h2>
+        <span class="kart-notu">@KuralMetni</span>
+    </div>
+    <div class="alan-satiri hizali">
+        <div class="alan tarih-alani">
+            <MudDatePicker Label="Başlangıç tarihi" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Date="@Durum.BaslangicTarihi" DateChanged="BaslangicDegisti"
+                           Culture="@Tr" DateFormat="dd.MM.yyyy" FirstDayOfWeek="DayOfWeek.Monday" AutoClose="true" />
+        </div>
+        <div class="alan sayi-alani">
+            <MudNumericField T="int" Label="Gün sayısı" Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Value="@Durum.GunSayisi" ValueChanged="Takvim.GunSayisiAyarla"
+                             Min="1" Max="@SinavTipi.EnFazlaGunSayisi" HelperText="@($"Varsayılan {SinavTipi.VarsayilanGunSayisi(Durum.SinavTipi)}")" />
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.EventAvailable"
+                   OnClick="TakvimiDoldur" Class="doldur-dugmesi">
+            Takvimi doldur
+        </MudButton>
+    </div>
+</section>
+
+@* ── 3) Sınav günleri: liste + takvim ── *@
+<section class="kart" aria-labelledby="baslik-gunler">
+    <div class="kart-basligi">
+        <h2 id="baslik-gunler">Sınav günleri ve saatleri</h2>
+        <span class="kart-notu">
+            @if (Durum.TakvimSlotlari.Count == 0)
+            {
+                <text>Henüz sınav günü yok.</text>
+            }
+            else
+            {
+                <text>@Durum.TakvimSlotlari.Count gün · @Durum.TakvimSlotlari.Values.Sum(s => s.Count) sınav saati</text>
+            }
+        </span>
+    </div>
+
+    <div class="gunler-duzeni">
+        <div class="gun-listesi">
+            @if (Durum.TakvimSlotlari.Count == 0)
+            {
+                <div class="bos-durum">
+                    <MudIcon Icon="@Icons.Material.Outlined.CalendarMonth" Size="Size.Large" />
+                    <div>Takvimden gün seçin ya da yukarıdan <b>Takvimi doldur</b>'u kullanın.</div>
+                </div>
+            }
+            else
+            {
+                <table class="tablo gun-tablosu">
+                    <thead>
+                        <tr>
+                            <th>Tarih</th>
+                            <th>Gün</th>
+                            <th>Hafta</th>
+                            <th>Saatler <span class="baslik-notu">(tıklayarak açın / kapatın)</span></th>
+                            <th aria-label="İşlemler"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var gun in Durum.TakvimSlotlari.Keys.OrderBy(g => g))
+                        {
+                            var saatler = Durum.TakvimSlotlari[gun];
+                            <tr @key="gun" class="@(_seciliGun == gun ? "secili" : "")" @onclick="() => { _seciliGun = gun; }">
+                                <td class="sayisal">@gun.ToString("dd.MM.yyyy")</td>
+                                <td class="@(gun.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday ? "haftasonu-metni" : "")">@Tr.DateTimeFormat.GetDayName(gun.DayOfWeek)</td>
+                                <td>@SinavTipi.HaftaNo(gun, Durum.TakvimSlotlari.Keys). hafta</td>
+                                <td>
+                                    <div class="saat-cipleri">
+                                        @foreach (var saat in Takvim.GununSaatSecenekleri(gun))
+                                        {
+                                            bool acik = saatler.Contains(saat);
+                                            <button type="button" class="saat-cipi @(acik ? "acik" : "")" aria-pressed="@(acik ? "true" : "false")"
+                                                    title="@(acik ? $"{saat} sınav saatini kaldır" : $"{saat} sınav saati ekle")"
+                                                    @onclick="() => SaatDegistir(gun, saat)" @onclick:stopPropagation="true">
+                                                @saat
+                                            </button>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="islem-hucresi">
+                                    <MudTooltip Text="Günü takvimden çıkar">
+                                        <MudIconButton Icon="@Icons.Material.Outlined.DeleteOutline" Size="Size.Small"
+                                                       OnClick="() => GunuKaldir(gun)" aria-label="@($"{gun:dd.MM.yyyy} gününü takvimden çıkar")" />
+                                    </MudTooltip>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <div class="takvim-alani">
+            <SinavTakvimi @ref="_takvim" SinavGunleri="@Durum.TakvimSlotlari" HaftaSonuBos="@(!SinavTipi.CumartesiSinavGunuMu(Durum.SinavTipi))"
+                          SeciliGun="@_seciliGun" Baslangic="@Durum.BaslangicTarihi" GunTiklandi="GunTiklandi" />
+        </div>
+    </div>
+</section>
+
+@code {
+    private static readonly CultureInfo Tr = CultureInfo.GetCultureInfo("tr-TR");
+
+    private SinavTakvimi _takvim;
+    private DateTime? _seciliGun;
+
+    private string KuralMetni => SinavTipi.CumartesiSinavGunuMu(Durum.SinavTipi)
+        ? $"{SinavTipi.Ad(Durum.SinavTipi)}: hafta sonları dahil her gün sınav günü sayılır."
+        : $"{SinavTipi.Ad(Durum.SinavTipi)}: yalnızca Pazartesi–Cuma; hafta sonları boş bırakılır.";
+
+    private void BaslangicDegisti(DateTime? tarih)
+    {
+        if (tarih.HasValue) Takvim.BaslangicTarihiAyarla(tarih.Value);
+    }
+
+    /// <summary>Takvimi baştan kurar — önce haftalara göre özet gösterilip onay alınır.</summary>
+    private async Task TakvimiDoldur()
+    {
+        var onizleme = Takvim.DoldurmaOnizlemesi();
+        if (onizleme.Gunler.Count == 0) return;
+
+        RenderFragment ozet = @<div class="doldurma-ozeti">
+            @if (onizleme.SilinecekGunSayisi > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                    Takvimdeki mevcut @onizleme.SilinecekGunSayisi gün ve saat seçimleri silinecek.
+                </MudAlert>
+            }
+            <p><b>@onizleme.TipAdi — @onizleme.GunSayisi sınav günü</b><br />(@onizleme.Kural)</p>
+            <table class="tablo ozet-tablosu">
+                <thead><tr><th>Hafta</th><th>Tarihler</th><th class="sayisal">Gün</th></tr></thead>
+                <tbody>
+                    @foreach (var hafta in onizleme.Haftalar)
+                    {
+                        <tr>
+                            <td>@hafta.No. hafta</td>
+                            <td>@hafta.Ilk.ToString("dd.MM.yyyy") – @hafta.Son.ToString("dd.MM.yyyy")</td>
+                            <td class="sayisal sag">@hafta.GunSayisi</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="mt-3">Her güne varsayılan saatler yazılır: @string.Join(", ", TakvimServisi.VarsayilanSinavSaatleri). Devam edilsin mi?</p>
+        </div>;
+
+        bool onay = await Diyalog.OnaylaAsync("Takvimi Doldur", null, "Takvimi doldur", "Vazgeç",
+            tehlikeli: onizleme.SilinecekGunSayisi > 0, icerik: ozet);
+        if (!onay) return;
+
+        Takvim.TakvimiDoldur(onizleme.Gunler);
+        _seciliGun = onizleme.Gunler[0];
+        _takvim?.AyaGit(onizleme.Gunler[0]);
+    }
+
+    /// <summary>Takvimde bir güne tıklandı: sınav günüyse çıkarılır, değilse eklenir.</summary>
+    private async Task GunTiklandi(DateTime gun)
+    {
+        _seciliGun = gun;
+        if (Takvim.SinavGunuMu(gun))
+        {
+            GunuKaldir(gun);
+            return;
+        }
+
+        // Final'de hafta sonları normalde boş bırakılır — elle işaretlemede uyarılır
+        if (Takvim.HaftaSonuUyarisiGerekir(gun) &&
+            !await Diyalog.OnaylaAsync("Hafta Sonu Uyarısı", Takvim.HaftaSonuUyariMetni(gun),
+                "Sınav günü yap", "Vazgeç", tur: DurumTuru.Uyari))
+            return;
+
+        Takvim.SinavGunuYap(gun);
+    }
+
+    private void GunuKaldir(DateTime gun)
+    {
+        var saatler = Takvim.SinavGununuKaldir(gun);
+        if (saatler == null) return;
+        Bildirim.Add($"{gun:dd.MM.yyyy} takvimden çıkarıldı.", Severity.Normal, secenek =>
+        {
+            secenek.Action = "Geri al";
+            secenek.ActionColor = Color.Primary;
+            secenek.OnClick = _ =>
+            {
+                Takvim.GunuGeriKoy(gun, saatler);
+                return Task.CompletedTask;
+            };
+        });
+    }
+
+    private void SaatDegistir(DateTime gun, string saat)
+    {
+        if (!Durum.TakvimSlotlari.TryGetValue(gun, out var saatler)) return;
+        var onceki = saatler.ToList();
+        bool gunCikti = Takvim.SaatAyarla(gun, saat, !saatler.Contains(saat));
+        if (!gunCikti) return;
+
+        // Son saat kapatılınca gün takvimden çıkar (eski davranış) — geri alınabilir
+        Bildirim.Add($"{gun:dd.MM.yyyy} gününün hiç sınav saati kalmadığı için gün takvimden çıkarıldı.", Severity.Warning, secenek =>
+        {
+            secenek.Action = "Geri al";
+            secenek.ActionColor = Color.Primary;
+            secenek.OnClick = _ =>
+            {
+                Takvim.GunuGeriKoy(gun, onceki);
+                return Task.CompletedTask;
+            };
+        });
+    }
+}

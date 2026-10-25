@@ -1,0 +1,111 @@
+@* Şablon kural denetimi: ihlaller türüne göre gruplanır; her tür tek tıkla gizlenebilir (tercih kaydedilir).
+   Listedeki bir ihlale tıklamak ızgaradaki hücresine götürür. İhlaller ENGELLEMEZ. *@
+<section class="kart ihlal-paneli @(GorunenSayisi > 0 ? "var" : "yok")" aria-labelledby="baslik-kural-denetimi">
+    <div class="kart-basligi">
+        <h2 id="baslik-kural-denetimi">
+            @if (GorunenSayisi > 0)
+            {
+                <MudIcon Icon="@Icons.Material.Outlined.WarningAmber" Size="Size.Small" Class="ihlal-ikonu" />
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Size="Size.Small" Class="tamam-ikonu" />
+            }
+            Kural denetimi
+        </h2>
+        <span class="kart-notu">
+            @if (_turler.Count == 0)
+            {
+                @:Şablonda kural ihlali yok.
+            }
+            else
+            {
+                @($"{GorunenSayisi} ihlal gösteriliyor")
+                @if (GizliSayisi > 0)
+                {
+                    @($" · {GizliSayisi} ihlal gizli")
+                }
+                @(" — ihlaller engellemez, bilerek bırakabilirsiniz")
+            }
+        </span>
+    </div>
+
+    @if (_turler.Count > 0)
+    {
+        <div class="ihlal-turleri" role="group" aria-label="İhlal türleri">
+            @foreach (var tur in _turler)
+            {
+                bool gizli = GizliTurler?.Contains(tur.Tur) == true;
+                <button type="button" class="ihlal-turu @(gizli ? "gizli" : "")" aria-pressed="@(gizli ? "false" : "true")"
+                        title="@($"{SablonServisi.TurAciklamasi(tur.Tur)}\n\n{(gizli ? "Göstermek" : "Gizlemek")} için tıklayın.")"
+                        @onclick="() => TurGizlendi.InvokeAsync((tur.Tur, !gizli))">
+                    <MudIcon Icon="@(gizli ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)" Size="Size.Small" />
+                    <span>@SablonServisi.TurAdi(tur.Tur)</span>
+                    <span class="sayac">@tur.Mesajlar.Count</span>
+                </button>
+            }
+        </div>
+
+        @if (GorunenSayisi > 0)
+        {
+            <MudExpansionPanels Elevation="0" Class="ihlal-listesi-paneli">
+                <MudExpansionPanel Text="İhlalleri listele" @bind-Expanded="_acik">
+                    @foreach (var tur in _turler.Where(t => GizliTurler?.Contains(t.Tur) != true))
+                    {
+                        <div class="ihlal-grubu">
+                            <div class="ihlal-grubu-basligi">@SablonServisi.TurAdi(tur.Tur) <span class="soluk">(@tur.Mesajlar.Count)</span></div>
+                            <div class="ihlal-grubu-aciklamasi">@SablonServisi.TurAciklamasi(tur.Tur)</div>
+                            <ul class="ihlal-listesi">
+                                @foreach (var m in tur.Mesajlar)
+                                {
+                                    <li>
+                                        @if (HucresiVar(m.Atama))
+                                        {
+                                            <button type="button" class="ihlal-satiri" title="Hücreye git" @onclick="() => HucreyeGit.InvokeAsync(m.Atama)">
+                                                <span>@m.Mesaj</span>
+                                                <MudIcon Icon="@Icons.Material.Outlined.ArrowForward" Size="Size.Small" />
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="ihlal-satiri pasif" title="Bu yerleşim ızgarada görünmüyor">@m.Mesaj</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+    }
+</section>
+
+@code {
+    [Parameter] public List<SablonIhlali> Ihlaller { get; set; }
+    [Parameter] public IReadOnlySet<IhlalTuru> GizliTurler { get; set; }
+
+    /// <summary>Atamanın ızgarada hücresi var mı (takvim dışı yerleşimlerin yoktur)?</summary>
+    [Parameter] public Func<SinavAtama, bool> HucresiVar { get; set; } = _ => true;
+
+    [Parameter] public EventCallback<(IhlalTuru Tur, bool Gizli)> TurGizlendi { get; set; }
+    [Parameter] public EventCallback<SinavAtama> HucreyeGit { get; set; }
+
+    private sealed record TurOzeti(IhlalTuru Tur, List<SablonIhlali> Mesajlar);
+
+    private List<TurOzeti> _turler = new();
+    private bool _acik;
+
+    private int GorunenSayisi => _turler.Where(t => GizliTurler?.Contains(t.Tur) != true).Sum(t => t.Mesajlar.Count);
+    private int GizliSayisi => _turler.Where(t => GizliTurler?.Contains(t.Tur) == true).Sum(t => t.Mesajlar.Count);
+
+    protected override void OnParametersSet()
+    {
+        // Aynı ihlal mesajı bir dersin her şubesi için ayrı kayıttır; listede bir kez gösterilir
+        _turler = (Ihlaller ?? new())
+            .GroupBy(i => i.Tur)
+            .OrderBy(g => g.Key)
+            .Select(g => new TurOzeti(g.Key, g.GroupBy(i => i.Mesaj).Select(x => x.First()).ToList()))
+            .ToList();
+    }
+}

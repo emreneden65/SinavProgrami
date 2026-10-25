@@ -1,0 +1,47 @@
+@* Sınav sonuçlarının liste görünümü (eski "Sınav Sonuçları" sekmesi): her şube bir satır, atanan salonlar
+   (öğrenci / kapasite, şube, gözetmen) tek sütunda. Aranabilir; sanal kaydırmayla çizilir. *@
+@{
+    var gorunen = SalonServisi.ListeyiSuz(Sonuclar, _arama);
+}
+<div class="arac-cubugu">
+    <MudTextField T="string" @bind-Value="_arama" Immediate="true" DebounceInterval="150" Placeholder="Ders, bölüm, salon ya da gözetmen ara"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="arama-kutusu" />
+    <span class="arac-notu">@gorunen.Count / @(Sonuclar?.Count ?? 0) sınav</span>
+</div>
+<div class="tablo-kabi buyuk">
+    <table class="tablo yapiskan duzenlenebilir">
+        <thead>
+            <tr>
+                <th class="genis-sutun">Ders adı</th>
+                <th>Bölüm</th>
+                <th class="sayisal">Sınıf</th>
+                <th>Şube</th>
+                <th class="sayisal sag">Kontenjan</th>
+                <th>Gün</th>
+                <th>Saat</th>
+                <th>Atanan salon(lar)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <Virtualize Items="gorunen" Context="a" ItemSize="37" OverscanCount="12" SpacerElement="tr">
+                <tr @key="a">
+                    <td class="kalin">@a.DersAdi</td>
+                    <td>@a.BolumAdi</td>
+                    <td class="sayisal">@a.SinifSeviyesi. Sınıf</td>
+                    <td>@a.Sube</td>
+                    <td class="sayisal sag">@a.Kontenjan</td>
+                    <td>@SalonServisi.ListeGunu(a.Gun)</td>
+                    <td>@a.Saat</td>
+                    <td class="kisaltilan genis" title="@a.AtananSalonlarText">@a.AtananSalonlarText</td>
+                </tr>
+            </Virtualize>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public List<SinavAtama> Sonuclar { get; set; }
+
+    private string _arama;
+}

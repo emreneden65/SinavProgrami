@@ -1,0 +1,154 @@
+@inherits DurumaBagliBilesen
+@inject DersServisi Servis
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+@* Ders listesi: arama, sütuna göre sıralama, hücrede düzenleme, ekleme, çoklu seçip silme *@
+@if (Durum.Dersler.Count == 0)
+{
+    <div class="bos-durum genis">
+        <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Size="Size.Large" />
+        <div class="bos-durum-basligi">Henüz sınav listesi yüklenmedi</div>
+        <div>Fakülteden gelen ham ders listesini (her satır bir şube) yükleyin. Beklenen sütunlar:
+            <i>Bölüm · Ünvanı Adı Soyadı · Öğretim Türü · Dersin Kodu · Verilen Dersin Adı · Dersin Şubesi · Öğrenci Sayısı</i>
+            (başlıkların yazımı esnektir).</div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="YuklemeIstendi" Class="mt-2">
+            Sınav listesi yükle
+        </MudButton>
+    </div>
+}
+else
+{
+    var gorunen = Gorunen();
+    <div class="arac-cubugu">
+        <MudTextField T="string" @bind-Value="_arama" Immediate="true" DebounceInterval="150" Placeholder="Ders ya da bölüm ara"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Outlined.Search" Clearable="true" Class="arama-kutusu" />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Add" OnClick="DersEkleAsync">Ders ekle</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.DeleteOutline"
+                   Disabled="@(_secili.Count == 0)" OnClick="SecilenleriSilAsync">
+            Seçilenleri sil@(_secili.Count > 0 ? $" ({_secili.Count})" : "")
+        </MudButton>
+        <span class="arac-notu">@gorunen.Count / @Durum.Dersler.Count şube</span>
+    </div>
+
+    <div class="tablo-kabi buyuk" @onkeydown="TabloTusu" tabindex="-1">
+        <table class="tablo yapiskan duzenlenebilir">
+            <thead>
+                <tr>
+                    <th class="secim-sutunu">
+                        <input type="checkbox" checked="@(gorunen.Count > 0 && gorunen.All(_secili.Contains))"
+                               @onchange="e => HepsiniSec(gorunen, (bool)e.Value)" aria-label="Görünen tüm satırları seç" />
+                    </th>
+                    <SiralanabilirBaslik Baslik="Kod" Anahtar="kod" Sira="_sira" SiraDegisti="s => _sira = s" />
+                    <SiralanabilirBaslik Baslik="Ders adı" Anahtar="ad" Sira="_sira" SiraDegisti="s => _sira = s" Sinif="genis-sutun" />
+                    <SiralanabilirBaslik Baslik="Bölüm" Anahtar="bolum" Sira="_sira" SiraDegisti="s => _sira = s" />
+                    <SiralanabilirBaslik Baslik="Sınıf" Anahtar="sinif" Sira="_sira" SiraDegisti="s => _sira = s" Sayisal="true" />
+                    <SiralanabilirBaslik Baslik="Şube" Anahtar="sube" Sira="_sira" SiraDegisti="s => _sira = s" />
+                    <SiralanabilirBaslik Baslik="Kontenjan" Anahtar="kontenjan" Sira="_sira" SiraDegisti="s => _sira = s" Sayisal="true" />
+                    <SiralanabilirBaslik Baslik="Öğretim elemanı" Anahtar="hoca" Sira="_sira" SiraDegisti="s => _sira = s" />
+                </tr>
+            </thead>
+            <tbody>
+                <Virtualize Items="gorunen" Context="ders" ItemSize="37" OverscanCount="12" SpacerElement="tr">
+                    <tr @key="ders" class="@(_secili.Contains(ders) ? "secili" : "")">
+                        <td class="secim-sutunu">
+                            <input type="checkbox" checked="@_secili.Contains(ders)" @onchange="e => Sec(ders, (bool)e.Value)"
+                                   aria-label="@($"{ders.DersAdi} — şube {ders.Sube} satırını seç")" />
+                        </td>
+                        <td class="soluk sayisal">@ders.DersKodu</td>
+                        <td><HucreDuzenleyici Deger="@ders.DersAdi" Etiket="Ders adı" Kaydet="v => Servis.DersAlaniniDegistir(ders, DersAlani.DersAdi, v)" /></td>
+                        <td><HucreDuzenleyici Deger="@ders.BolumAdi" Etiket="Bölüm" Kaydet="v => Servis.DersAlaniniDegistir(ders, DersAlani.Bolum, v)" /></td>
+                        <td class="sayisal sag"><HucreDuzenleyici Sayi="true" Deger="@ders.SinifSeviyesi.ToString()" Etiket="Sınıf" Kaydet="v => Servis.DersAlaniniDegistir(ders, DersAlani.Sinif, v)" /></td>
+                        <td><HucreDuzenleyici Deger="@ders.Sube" Etiket="Şube" Kaydet="v => Servis.DersAlaniniDegistir(ders, DersAlani.Sube, v)" /></td>
+                        <td class="sayisal sag"><HucreDuzenleyici Sayi="true" Deger="@ders.Kontenjan.ToString()" Etiket="Kontenjan" Kaydet="v => Servis.DersAlaniniDegistir(ders, DersAlani.Kontenjan, v)" /></td>
+                        <td class="soluk kisaltilan" title="@ders.OgretimElemani">@ders.OgretimElemani</td>
+                    </tr>
+                </Virtualize>
+            </tbody>
+        </table>
+    </div>
+    <div class="tablo-ipucu">
+        Hücreye tıklayıp düzenleyin — <kbd>Enter</kbd> kaydeder, <kbd>Esc</kbd> vazgeçer. Satırları işaretleyip <kbd>Delete</kbd> ile silebilirsiniz.
+    </div>
+}
+
+@code {
+    [Parameter] public EventCallback YuklemeIstendi { get; set; }
+
+    private string _arama;
+    private (string Anahtar, bool Artan) _sira = ("", true);
+    private readonly HashSet<Ders> _secili = new();
+
+    /// <summary>Arama + sıralama uygulanmış satırlar (sıralama seçilmediyse yüklenen sıra).</summary>
+    private List<Ders> Gorunen()
+    {
+        _secili.IntersectWith(Durum.Dersler);   // listeden çıkmış satırlar seçimde kalmasın
+        var liste = DersServisi.Filtrele(Durum.Dersler, _arama);
+        if (string.IsNullOrEmpty(_sira.Anahtar)) return liste;
+
+        var tr = StringComparer.Create(CultureInfo.GetCultureInfo("tr-TR"), ignoreCase: true);
+        IOrderedEnumerable<Ders> sirali = _sira.Anahtar switch
+        {
+            "kod" => Sirala(liste, d => d.DersKodu ?? "", tr),
+            "ad" => Sirala(liste, d => d.DersAdi ?? "", tr),
+            "bolum" => Sirala(liste, d => d.BolumAdi ?? "", tr),
+            "sube" => Sirala(liste, d => d.Sube ?? "", tr),
+            "hoca" => Sirala(liste, d => d.OgretimElemani ?? "", tr),
+            "sinif" => _sira.Artan ? liste.OrderBy(d => d.SinifSeviyesi) : liste.OrderByDescending(d => d.SinifSeviyesi),
+            _ => _sira.Artan ? liste.OrderBy(d => d.Kontenjan) : liste.OrderByDescending(d => d.Kontenjan)
+        };
+        return sirali.ToList();
+    }
+
+    private IOrderedEnumerable<Ders> Sirala(IEnumerable<Ders> liste, Func<Ders, string> anahtar, StringComparer tr)
+        => _sira.Artan ? liste.OrderBy(anahtar, tr) : liste.OrderByDescending(anahtar, tr);
+
+    private void Sec(Ders ders, bool secili)
+    {
+        if (secili) _secili.Add(ders);
+        else _secili.Remove(ders);
+    }
+
+    private void HepsiniSec(List<Ders> gorunen, bool secili)
+    {
+        if (secili) _secili.UnionWith(gorunen);
+        else _secili.ExceptWith(gorunen);
+    }
+
+    private async Task TabloTusu(KeyboardEventArgs e)
+    {
+        if (e.Key == "Delete" && _secili.Count > 0) await SecilenleriSilAsync();
+    }
+
+    private async Task SecilenleriSilAsync()
+    {
+        var silinecek = Durum.Dersler.Where(_secili.Contains).ToList();
+        if (silinecek.Count == 0) return;
+
+        string mesaj = silinecek.Count == 1
+            ? $"'{silinecek[0].DersAdi} — Şube {silinecek[0].Sube}' silinecek. Emin misiniz?"
+            : $"{silinecek.Count} şube silinecek:\n" +
+              string.Join("\n", silinecek.Take(8).Select(d => $"• {d.DersAdi} — Şube {d.Sube} ({d.BolumAdi})")) +
+              (silinecek.Count > 8 ? $"\n… ve {silinecek.Count - 8} şube daha" : "") + "\n\nEmin misiniz?";
+        if (!await Diyalog.OnaylaAsync("Ders Sil", mesaj, "Sil", "Vazgeç", tehlikeli: true)) return;
+
+        Servis.DersleriSil(silinecek);
+        _secili.Clear();
+        Bildirim.Add(silinecek.Count == 1 ? "Ders listeden silindi." : $"{silinecek.Count} şube listeden silindi.", Severity.Info);
+    }
+
+    private async Task DersEkleAsync()
+    {
+        var referans = await Diyalog.ShowAsync<DersEkleDialog>((string)null, new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true, BackdropClick = false, CloseButton = true
+        });
+        var sonuc = await referans.Result;
+        if (sonuc is { Canceled: false, Data: Ders eklenen })
+        {
+            _arama = null;
+            Bildirim.Add($"'{eklenen.DersAdi}' listeye eklendi.", Severity.Success);
+        }
+    }
+}

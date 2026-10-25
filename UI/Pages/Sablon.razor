@@ -1,0 +1,297 @@
+@page "/sablon"
+@inherits DurumaBagliBilesen
+@inject SablonServisi Servis
+@inject AyarlarDeposu Ayarlar
+@inject IDosyaServisi Dosya
+@inject IsYurutucu IsYurutucu
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Şablon</PageTitle>
+
+<SayfaBasligi AdimNo="4" Baslik="Şablon" Aciklama="@IsAkisi.Adim(4).Aciklama" />
+
+@{
+    _izgara = Servis.Izgara();
+    var gizli = GizliTurler();
+    Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.OtomatikSablon, out var sonDosya);
+}
+
+<ExcelGidisDonus Baslik="Şablon Excel'i"
+                 Not="Şablon salonsuzdur: hangi ders hangi gün ve saatte. Salonlar 5. adımda atanır."
+                 OlusturBasligi="Otomatik şablon oluşturun"
+                 OlusturAciklamasi="Dersler sınav kurallarına göre takvime dağıtılır ve 'Sınav Haftası Dağıtım Şablonu' Excel'i hazırlanır."
+                 OlusturMetni="Otomatik şablon oluştur"
+                 OlusturKapaliNedeni="@(Durum.Kilitler.OtomatikDagit ? null : "Önce 3. adımda sınav listesini yükleyin.")"
+                 Olustur="OtomatikOlusturAsync"
+                 SonDosya="@sonDosya"
+                 GeriYukleBasligi="Şablonu geri yükleyin"
+                 GeriYukleAciklamasi="Kontrol ettiğiniz ya da hazır doldurulmuş şablonu yükleyin; aşağıda düzenleyebilirsiniz."
+                 GeriYukleMetni="Şablonu geri yükle"
+                 GeriYukle="GeriYukleAsync" />
+
+@if (_izgara == null)
+{
+    <section class="kart">
+        <div class="bos-durum genis">
+            <MudIcon Icon="@Icons.Material.Outlined.GridOn" Size="Size.Large" />
+            <div class="bos-durum-basligi">Henüz şablon yüklenmedi</div>
+            <div>Otomatik şablonu oluşturup Excel'de kontrol edin, sonra <b>Şablonu geri yükle</b> ile yükleyin. Yüklenen şablon
+                burada gün × saat × bölüm ızgarası olarak görünür; dersleri taşıyabilir, şube kontenjanlarını değiştirebilir,
+                not ekleyebilirsiniz. Kural ihlalleri kırmızıyla işaretlenir.</div>
+        </div>
+    </section>
+}
+else
+{
+    <div class="bilgi-seridi">
+        <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" />
+        <span>@IsAkisi.Ozet(Durum, 4)</span>
+        <span class="ayrac">·</span>
+        <span>@_izgara.Gunler.Count gün · @_izgara.Saatler.Count saat · @_izgara.Bolumler.Count bölüm</span>
+    </div>
+
+    @if (Durum.SonSonuclar != null)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+            Salonlar bu şablondan atandı. Şablonda değişiklik yaparsanız 5. adımda <b>Salonları ata</b>'yı yeniden çalıştırın.
+        </MudAlert>
+    }
+
+    <IhlalPaneli Ihlaller="_izgara.Ihlaller" GizliTurler="gizli" HucresiVar="a => HucreBul(a) != null"
+                 TurGizlendi="t => Ayarlar.IhlalTuruGizle(t.Tur, t.Gizli)" HucreyeGit="HucreyeGitAsync" />
+
+    <section class="kart sablon-karti" aria-labelledby="baslik-sablon-izgarasi">
+        <div class="kart-basligi">
+            <h2 id="baslik-sablon-izgarasi">Şablon ızgarası</h2>
+            <div class="yakinlastirma" role="group" aria-label="Yakınlaştırma">
+                <MudIconButton Icon="@Icons.Material.Outlined.ZoomOut" Size="Size.Small" aria-label="Küçült"
+                               Disabled="@(YaziBoyutu <= 6)" OnClick="() => Yakinlastir(-1)" />
+                <button type="button" class="yakinlastirma-orani" title="Varsayılan boyuta dön" @onclick="() => Ayarlar.SablonYaziBoyutuAyarla(9)">
+                    %@Math.Round(YaziBoyutu / 9 * 100)
+                </button>
+                <MudIconButton Icon="@Icons.Material.Outlined.ZoomIn" Size="Size.Small" aria-label="Büyüt"
+                               Disabled="@(YaziBoyutu >= 16)" OnClick="() => Yakinlastir(1)" />
+            </div>
+        </div>
+        <SablonIzgarasiBileseni @ref="_izgaraBileseni" Izgara="_izgara" GizliTurler="gizli" YaziBoyutu="YaziBoyutu"
+                                YakinlastirmaIstendi="Yakinlastir" />
+        <div class="tablo-ipucu sablon-ipucu">
+            <span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> gezin</span>
+            <span><kbd>Enter</kbd> / <kbd>F2</kbd> / çift tıklama ya da yazmaya başlama: düzenle</span>
+            <span><kbd>Esc</kbd> vazgeç</span>
+            <span><kbd>Delete</kbd> dersi çıkar</span>
+            <span><kbd>Ctrl</kbd>/<kbd>Shift</kbd> + tıklama: çoklu seçim</span>
+            <span><kbd>Ctrl</kbd> + tekerlek: yakınlaştır</span>
+            <span class="lejant"><i class="kutu ihlal"></i> kural ihlali</span>
+            <span class="lejant"><i class="kutu kapali"></i> takvimde seçili olmayan saat</span>
+        </div>
+    </section>
+
+    <MudExpansionPanels Elevation="0" Class="yardim-paneli">
+        <MudExpansionPanel Text="Şablon ızgarasında neler yapılabilir?">
+            <ul class="yardim-listesi">
+                <li><b>Ders adı</b> hücresinde bölümün dersleri listelenir; yazdıkça süzülür. Ders şablonda başka bir saatteyse
+                    tüm şubeleriyle buraya <b>taşınır</b>, değilse ders listesindeki şubeleriyle <b>eklenir</b>.</li>
+                <li>Ders hücresini boşaltmak (ya da <kbd>Delete</kbd>) dersi şablondan çıkarır. Yanlışlıkla sildiyseniz bildirimdeki
+                    <b>Geri al</b>'a basın.</li>
+                <li><b>A / B / C</b>: dersin ilk üç şubesinin kontenjanı. Değişiklik ders listesindeki şubeye de yansır.</li>
+                <li><b>D</b>: serbest not alanı (eski adıyla INT); kayıtta saklanır, şablona etki etmez.</li>
+                <li>Gri hücreler takvimde o gün seçili olmayan saatlerdir. Saatleri <b>1 · Dönem ve Takvim</b> sayfasından açabilirsiniz.</li>
+                <li>Kural ihlalleri engellemez; bilerek bırakabilirsiniz. Bir türü gizlemek için yukarıdaki düğmesine basın.</li>
+            </ul>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+}
+
+@code {
+    private SablonIzgarasi _izgara;
+    private SablonIzgarasiBileseni _izgaraBileseni;
+
+    private double YaziBoyutu => Ayarlar.Ayarlar.SablonYaziBoyutu is >= 6 and <= 16 ? Ayarlar.Ayarlar.SablonYaziBoyutu : 9;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Ayarlar.Degisti += AyarDegisti;
+    }
+
+    private void AyarDegisti() => InvokeAsync(StateHasChanged);
+
+    public override void Dispose()
+    {
+        Ayarlar.Degisti -= AyarDegisti;
+        base.Dispose();
+    }
+
+    private HashSet<IhlalTuru> GizliTurler()
+    {
+        var gizli = new HashSet<IhlalTuru>();
+        foreach (var ad in Ayarlar.Ayarlar.GizliIhlalTurleri ?? new())
+            if (Enum.TryParse<IhlalTuru>(ad, out var tur)) gizli.Add(tur);
+        return gizli;
+    }
+
+    private void Yakinlastir(int yon) => Ayarlar.SablonYaziBoyutuAyarla(YaziBoyutu + yon);
+
+    /// <summary>Atamanın ızgaradaki hücresi (satır, gün); takvim dışındaysa null.</summary>
+    private (int Satir, int Gun)? HucreBul(SinavAtama atama)
+    {
+        if (_izgara == null) return null;
+        foreach (var satir in _izgara.Satirlar)
+            for (int g = 0; g < satir.Hucreler.Length; g++)
+                if (satir.Hucreler[g].Grup?.Contains(atama) == true)
+                    return (satir.Sira, g);
+        return null;
+    }
+
+    private async Task HucreyeGitAsync(SinavAtama atama)
+    {
+        if (HucreBul(atama) is { } h && _izgaraBileseni != null)
+            await _izgaraBileseni.HucreyeGitAsync(h.Satir, h.Gun);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // OTOMATİK ŞABLON (eski BtnOtomatikDagit_Click)
+    // ═══════════════════════════════════════════════════════════════
+
+    private async Task OtomatikOlusturAsync()
+    {
+        string eksik = Servis.OtomatikSablonEksigi();
+        if (eksik != null)
+        {
+            await Diyalog.BilgiAsync("Eksik Bilgi", eksik, DurumTuru.Uyari);
+            return;
+        }
+
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.OtomatikSablon, out var sonYol);
+        string yol = await Dosya.KaydedilecekDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = SonDosyaTurleri.OtomatikSablon,
+            Baslik = "Otomatik Dağıtılmış Şablonu Kaydet",
+            Filtre = "Excel Dosyası (*.xlsx)|*.xlsx",
+            OnerilenAd = $"Otomatik_Dagitim_{DateTime.Now:yyyyMMdd}.xlsx",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        OtomatikSablonSonucu sonuc;
+        try
+        {
+            sonuc = await IsYurutucu.CalistirAsync("Dersler kurallara göre dağıtılıyor…", () => Servis.OtomatikSablonOlustur(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Otomatik dağıtım başarısız", ex);
+            Durum.DurumYaz("❌ Otomatik dağıtım başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Otomatik dağıtım hatası:\n\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        Servis.OtomatikSablonKaydedildi(sonuc);
+        bool ac = await Diyalog.OnaylaAsync("Otomatik Şablon Hazır", null, "Excel'de aç", "Kapat",
+            icerik: OtomatikOzeti(sonuc), tur: sonuc.KodsuzSube > 0 ? DurumTuru.Uyari : DurumTuru.Basari);
+        if (ac) Dosya.DosyayiAc(sonuc.Yol);
+
+        if (sonuc.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Otomatik Dağıtım Uyarıları", sonuc.Uyarilar,
+                $"{sonuc.Uyarilar.Count} uyarı var (ortak ders bölünmesi, sığmayan dersler vb.). Şablon oluşturuldu; bu satırları Excel'de kontrol etmeniz önerilir.");
+    }
+
+    private RenderFragment OtomatikOzeti(OtomatikSablonSonucu s) => @<div class="onizleme-ozeti">
+        <p>Şablon oluşturuldu: <b title="@s.Yol">@System.IO.Path.GetFileName(s.Yol)</b></p>
+        <ul class="yardim-listesi">
+            <li><b>@s.Yerlesen ders slotu</b> 'Sınav Haftası Dağıtım Şablonu'na kurallara göre yerleştirildi.</li>
+            <li>Normal salon kapasitesi: @DerslikServisi.Sayi(s.NormalKapasite) (ortak ders bölünmesi için).</li>
+            <li>'Çekilmiş Dersler', 'Ortak Dersler' ve gün sayfaları da hazırlandı.</li>
+            <li>Beğenmezseniz Excel'i düzenleyip <b>Şablonu geri yükle</b> ile yükleyin.</li>
+        </ul>
+        @if (s.KodsuzSube > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                @(s.Yerlesen == 0 ? "Hiçbir ders yerleşmedi: " : "")ders listesindeki <b>@s.KodsuzSube şubenin ders kodu yok</b>; otomatik dağıtım
+                dersleri kodlarıyla tanıdığı için bu şubeler dağıtıma alınmadı. Ders listesi bir şablondan geri yüklendiyse kodlar
+                bulunmaz — otomatik şablon için 3. adımda sınav listesini (ham ders listesi) yeniden yükleyin.
+            </MudAlert>
+        }
+        @if (s.Uyarilar.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@s.Uyarilar.Count uyarı var (ortak ders bölünmesi, sığmayan dersler vb.); bu pencereden sonra listelenir.</MudAlert>
+        }
+    </div>;
+
+    // ═══════════════════════════════════════════════════════════════
+    // ŞABLONU GERİ YÜKLE (eski BtnSablonYukle_Click)
+    // ═══════════════════════════════════════════════════════════════
+
+    private async Task GeriYukleAsync()
+    {
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.OtomatikSablon, out var sonYol);
+        string yol = await Dosya.AcilacakDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = "SablonGeriYukle",
+            Baslik = "Doldurulmuş Dağıtım Şablonunu Seçin",
+            Filtre = "Excel Dosyası (*.xlsx)|*.xlsx|Tüm Dosyalar (*.*)|*.*",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        SablonOnizlemesi onizleme;
+        try
+        {
+            onizleme = await IsYurutucu.CalistirAsync("Doldurulmuş şablon okunuyor…", () => SablonServisi.Onizle(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Şablon okunamadı", ex);
+            Durum.DurumYaz("❌ Şablon yüklemesi başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Şablon yükleme hatası:\n\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        if (onizleme.Bos)
+        {
+            Durum.DurumYaz("❌ Hiç sınav yüklenemedi.", DurumTuru.Hata);
+            Durum.Bildir();
+            string mesaj = "Şablondan hiç sınav okunamadı.\n('Sınav Haftası Dağıtım Şablonu' sayfasında gün/saat/ders yerleşimi beklenir.)";
+            if (onizleme.Uyarilar.Count > 0) mesaj += "\n\n" + string.Join("\n", onizleme.Uyarilar.Take(15));
+            await Diyalog.BilgiAsync("Şablon Okunamadı", mesaj, DurumTuru.Uyari);
+            return;
+        }
+
+        bool onay = await Diyalog.OnaylaAsync("Şablon Yükleme Onayı", null, "Şablonu yükle", "Vazgeç",
+            icerik: OnizlemeOzeti(onizleme), tehlikeli: Durum.SablonSonuclari != null || Durum.Dersler.Count > 0);
+        if (!onay) return;
+
+        Servis.SablonuUygula(onizleme, yol);
+        Bildirim.Add($"{onizleme.GunSayisi} gün / {onizleme.SubeSayisi} şube yüklendi.", Severity.Success);
+
+        if (onizleme.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Yükleme Notları", onizleme.Uyarilar,
+                $"{onizleme.Uyarilar.Count} satır için not bulundu (ör. saat girilmemiş, kontenjan yok). Şablon yüklendi.");
+    }
+
+    private RenderFragment OnizlemeOzeti(SablonOnizlemesi o) => @<div class="onizleme-ozeti">
+        <p>Doldurulmuş şablon okundu: <b>@o.GunSayisi gün</b>, <b>@o.SubeSayisi şube yerleşimi</b>.</p>
+        <table class="tablo ozet-tablosu">
+            <thead><tr><th>Bölüm</th><th class="sayisal sag">Ders</th></tr></thead>
+            <tbody>
+                @foreach (var b in o.Bolumler)
+                {
+                    <tr><td>@b.Bolum</td><td class="sayisal sag">@b.DersSayisi</td></tr>
+                }
+            </tbody>
+        </table>
+        @if (o.Uyarilar.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@o.Uyarilar.Count satır için not/uyarı var (salon gerekmeyebilir); yüklemeden sonra listelenir.</MudAlert>
+        }
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+            Ders listesi ve takvim bu şablondakiyle değiştirilir; mevcut şablon, D notları ve varsa salon ataması temizlenir.
+            Hata oranları, havuzlar, ortak ders seçimi ve derslikler korunur.
+        </MudAlert>
+        <p class="mt-3">Bu yerleşim yüklensin mi?</p>
+    </div>;
+}

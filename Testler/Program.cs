@@ -18,8 +18,9 @@ static class Program
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         DatabaseHelper.VeritabaniniHazirla();   // test klasöründe ayrı SinavDB.db
 
-        // Testler bilgisayardaki GERÇEK oturum kaydına dokunmasın
+        // Testler bilgisayardaki GERÇEK oturum kaydına ve hata günlüğüne dokunmasın
         OturumKaydi.Klasor = Path.Combine(Path.GetTempPath(), "SinavProgramiTest_" + Guid.NewGuid().ToString("N"));
+        SinavProgrami.Services.HataGunlugu.Klasor = Path.Combine(OturumKaydi.Klasor, "Yerel");
 
         var t = new TestKosucu();
         try
@@ -36,6 +37,18 @@ static class Program
             SaatBicimiTestleri.Calistir(t);      // Madde 9 — "(GÖZETMENLİ)" kalktı, Excel'de saat 13.00
             GunSayisiTestleri.Calistir(t);       // Madde 10 — vize / final gün sayısı serbest
             GozetmenGunDuzeniTestleri.Calistir(t); // Madde 11 — gözetmen gün dengesi, yakın saatler
+
+            // Yeni arayüz (Blazor) — eski arayüzle birlikte çalıştığı sürece eski testler de geçmeli
+            YeniArayuzCekirdekTestleri.Calistir(t);  // A1 — çalışma durumu, oturum, takvim, iş akışı
+            YeniArayuzSayfaTestleri.Calistir(t);     // A1 — Genel Bakış, Dönem ve Takvim, menü, üst çubuk
+            YeniArayuzPencereTestleri.Calistir(t);   // A1 — pencere boyutu / tam ekran
+            YeniArayuzDersTestleri.Calistir(t);      // A2 — derslikler, sınav listesi, ders / uygulamalı / hata oranı / ortak / havuz
+            YeniArayuzDersSayfaTestleri.Calistir(t); // A2 — Derslikler ve Dersler sayfaları
+            YeniArayuzSablonTestleri.Calistir(t);    // A3 — şablon: otomatik / geri yükleme / ızgara / düzenleme / kural denetimi
+            YeniArayuzSablonSayfaTestleri.Calistir(t); // A3 — Şablon sayfası
+            YeniArayuzSalonTestleri.Calistir(t);     // A4 — salonlar, gözetmenler, final, temizle / sıfırla
+            YeniArayuzA4SayfaTestleri.Calistir(t);   // A4 — Salonlar, Gözetmenler, Final, Ayarlar sayfaları
+            YeniArayuzGecisTestleri.Calistir(t);     // A5 — eski arayüz testlerinin karşılıkları, eski arayüzle oturum uyumu
         }
         finally
         {
@@ -63,7 +76,9 @@ class TestKosucu
         catch (Exception ex)
         {
             _basarisiz++;
-            Console.WriteLine($"  ✘ {ad}\n      {ex.Message}");
+            // TEST_AYRINTI=1 ile yığın izi de yazılır (hata ayıklarken)
+            string ayrinti = Environment.GetEnvironmentVariable("TEST_AYRINTI") == "1" ? ex.ToString() : ex.Message;
+            Console.WriteLine($"  ✘ {ad}\n      {ayrinti}");
         }
     }
 

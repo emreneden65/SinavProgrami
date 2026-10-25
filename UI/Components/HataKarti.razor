@@ -1,0 +1,16 @@
+@* Sayfada yakalanmamış hata olduğunda sayfanın yerine gösterilen kart *@
+<div class="hata-karti">
+    <MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Color="Color.Error" Size="Size.Large" />
+    <h1>Bu sayfa açılırken beklenmeyen bir hata oluştu</h1>
+    <p>Verileriniz kaybolmadı; çalışmanız otomatik olarak kaydedilmeye devam ediyor.</p>
+    <p class="hata-ayrinti">@Hata?.Message</p>
+    <p class="hata-gunluk">Ayrıntılar şu dosyaya yazıldı: <code>@HataGunlugu.DosyaYolu</code></p>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@AdimIkonlari.GenelBakis" OnClick="Devam">
+        Genel Bakış'a dön
+    </MudButton>
+</div>
+
+@code {
+    [Parameter] public Exception Hata { get; set; }
+    [Parameter] public EventCallback Devam { get; set; }
+}

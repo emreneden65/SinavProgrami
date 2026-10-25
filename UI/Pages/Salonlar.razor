@@ -1,0 +1,303 @@
+@page "/salonlar"
+@inherits DurumaBagliBilesen
+@inject SalonServisi Servis
+@inject AyarlarDeposu Ayarlar
+@inject IDosyaServisi Dosya
+@inject IsYurutucu IsYurutucu
+@inject IDialogService Diyalog
+@inject ISnackbar Bildirim
+
+<PageTitle>Salonlar</PageTitle>
+
+<SayfaBasligi AdimNo="5" Baslik="Salonlar" Aciklama="@IsAkisi.Adim(5).Aciklama" />
+
+@{
+    _matris = Servis.Matris();
+    Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.SalonluExcel, out var sonDosya);
+}
+
+<section class="kart" aria-labelledby="baslik-salon-atama">
+    <div class="kart-basligi">
+        <h2 id="baslik-salon-atama">Salon ataması</h2>
+        @if (Durum.SonSonuclar != null)
+        {
+            <span class="kart-notu">@Ozet()</span>
+        }
+    </div>
+    <div class="eylem-satiri">
+        <MudButton Variant="@(Durum.SonSonuclar == null ? Variant.Filled : Variant.Outlined)" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Outlined.MeetingRoom" Disabled="@(!Durum.Kilitler.SalonAta)" OnClick="SalonlariAtaAsync">
+            Salonları ata
+        </MudButton>
+        @if (!Durum.Kilitler.SalonAta)
+        {
+            <span class="gd-neden"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" /> Önce 4. adımda şablonu geri yükleyin.</span>
+        }
+        else
+        {
+            <span class="eylem-aciklamasi">Şablondaki her sınav dersliklere dağıtılır: ortak dersler önce, ELM ve MEK T4 binasına öncelikli,
+                uygulamalı dersler yalnızca uygulamalı dersliklere; hata oranı düşülmüş kontenjanla.</span>
+        }
+    </div>
+</section>
+
+<ExcelGidisDonus Baslik="Salonlu Excel"
+                 Not="Salonları Excel'de elle değiştirebilirsiniz; gözetmen ataması geri yüklenen dosyaya göre yapılır."
+                 OlusturBasligi="Salonlu Excel'i çıkarın"
+                 OlusturAciklamasi="Gün sayfalarında salon matrisi ve 'Sınav Haftası Dağıtım Şablonu' sayfası olan Excel hazırlanır."
+                 OlusturMetni="Salonlu Excel çıkar"
+                 OlusturKapaliNedeni="@(Durum.Kilitler.SalonExport ? null : "Önce salonları atayın.")"
+                 Olustur="SalonluExcelCikarAsync"
+                 SonDosya="@sonDosya"
+                 GeriYukleBasligi="Salonlu Excel'i geri yükleyin"
+                 GeriYukleAciklamasi="Kontrol ettiğiniz (gerekirse salonlarını düzelttiğiniz) dosyayı yükleyin; ardından 6. adımda gözetmenler atanır."
+                 GeriYukleMetni="Salonlu Excel yükle"
+                 GeriYukle="SalonluExcelYukleAsync" />
+
+@if (_matris == null)
+{
+    <section class="kart">
+        <div class="bos-durum genis">
+            <MudIcon Icon="@Icons.Material.Outlined.TableChart" Size="Size.Large" />
+            <div class="bos-durum-basligi">Henüz salon ataması yok</div>
+            <div>@(Durum.SonSonuclar != null && Durum.Derslikler.Count == 0
+                     ? "Salon matrisi için derslik listesi gerekir; 2. adımda derslikleri yükleyin."
+                     : "Salonları atadığınızda (ya da salonlu Excel'i geri yüklediğinizde) her şubenin hangi derslikte sınava gireceği burada matris ve liste olarak görünür; matristen elle düzeltebilirsiniz.")</div>
+        </div>
+    </section>
+}
+else
+{
+    var satirlar = SalonServisi.Suz(_matris.Satirlar, _bolum, _sinif);
+    <section class="kart sonuc-karti" aria-label="Salon sonuçları">
+        <MudTabs @bind-ActivePanelIndex="_sekme" Elevation="0" Rounded="false" ApplyEffectsToContainer="true"
+                 TabPanelsClass="ders-sekmeleri" Class="ders-sekme-kabi" KeepPanelsAlive="false">
+            <MudTabPanel Text="Matris" Icon="@Icons.Material.Outlined.GridOn">
+                <div class="arac-cubugu">
+                    <MudSelect T="string" @bind-Value="_bolum" Label="Bölüm" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Clearable="true" Class="filtre-kutusu" Placeholder="Tümü">
+                        @foreach (var b in _matris.Bolumler)
+                        {
+                            <MudSelectItem Value="@b">@b</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="int?" @bind-Value="_sinif" Label="Sınıf" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Clearable="true" Class="filtre-kutusu dar" Placeholder="Tümü">
+                        @foreach (var s in _matris.Siniflar)
+                        {
+                            <MudSelectItem T="int?" Value="@s">@s. sınıf</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <div class="yakinlastirma" role="group" aria-label="Yakınlaştırma">
+                        <MudIconButton Icon="@Icons.Material.Outlined.ZoomOut" Size="Size.Small" aria-label="Küçült"
+                                       Disabled="@(YaziBoyutu <= 6)" OnClick="() => Yakinlastir(-1)" />
+                        <button type="button" class="yakinlastirma-orani" title="Varsayılan boyuta dön" @onclick="() => Ayarlar.MatrisYaziBoyutuAyarla(9)">
+                            %@Math.Round(YaziBoyutu / 9 * 100)
+                        </button>
+                        <MudIconButton Icon="@Icons.Material.Outlined.ZoomIn" Size="Size.Small" aria-label="Büyüt"
+                                       Disabled="@(YaziBoyutu >= 16)" OnClick="() => Yakinlastir(1)" />
+                    </div>
+                    <span class="arac-notu">@satirlar.Count(s => !s.Bos) sınav · @satirlar.Count(s => s.Bos) boş slot · @_matris.Salonlar.Count derslik</span>
+                </div>
+                <SalonMatrisiBileseni Matris="_matris" Satirlar="satirlar" YaziBoyutu="YaziBoyutu" YakinlastirmaIstendi="Yakinlastir" />
+                <div class="tablo-ipucu sablon-ipucu">
+                    <span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> gezin</span>
+                    <span><kbd>Enter</kbd> / <kbd>F2</kbd> / çift tıklama ya da rakam: öğrenci sayısını yaz</span>
+                    <span><kbd>Delete</kbd> salon atamasını sil</span>
+                    <span><kbd>Ctrl</kbd> + tekerlek: yakınlaştır</span>
+                    <span class="lejant"><i class="kutu dolu"></i> atanmış (şube)</span>
+                    <span class="lejant"><i class="kutu asim"></i> kapasite aşıldı</span>
+                    <span class="lejant"><b class="uygulamali-ornegi">T4-…</b> uygulamalı derslik</span>
+                </div>
+            </MudTabPanel>
+            <MudTabPanel Text="@($"Liste ({Durum.SonSonuclar.Count})")" Icon="@Icons.Material.Outlined.ViewList">
+                <SonucListesi Sonuclar="Durum.SonSonuclar" />
+            </MudTabPanel>
+        </MudTabs>
+    </section>
+}
+
+@code {
+    private SalonMatrisi _matris;
+    private int _sekme;
+    private string _bolum;
+    private int? _sinif;
+
+    private double YaziBoyutu => Ayarlar.Ayarlar.MatrisYaziBoyutu is >= 6 and <= 16 ? Ayarlar.Ayarlar.MatrisYaziBoyutu : 9;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Ayarlar.Degisti += AyarDegisti;
+    }
+
+    private void AyarDegisti() => InvokeAsync(StateHasChanged);
+
+    public override void Dispose()
+    {
+        Ayarlar.Degisti -= AyarDegisti;
+        base.Dispose();
+    }
+
+    private void Yakinlastir(int yon) => Ayarlar.MatrisYaziBoyutuAyarla(YaziBoyutu + yon);
+
+    private string Ozet()
+    {
+        var s = Durum.SonSonuclar;
+        int gun = s.Select(a => a.Gun.Date).Distinct().Count();
+        int gorev = s.Sum(a => a.AtananSalonlar?.Count ?? 0);
+        int gozetmenli = s.Sum(a => a.AtananSalonlar?.Count(x => !string.IsNullOrWhiteSpace(x.GozetmenAdSoyad)) ?? 0);
+        return $"{gun} gün · {s.Count} sınav · {gorev} salon görevi" + (gozetmenli > 0 ? $" · {gozetmenli} görevde gözetmen var" : "");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SALONLARI ATA (eski BtnSalonAta_Click)
+    // ═══════════════════════════════════════════════════════════════
+
+    private async Task SalonlariAtaAsync()
+    {
+        string eksik = Servis.SalonAtamaEksigi();
+        if (eksik != null)
+        {
+            await Diyalog.BilgiAsync("Eksik Bilgi", eksik, DurumTuru.Uyari);
+            return;
+        }
+        if (Durum.SonSonuclar != null &&
+            !await Diyalog.OnaylaAsync("Salonları Yeniden Ata", "Mevcut salon ataması şablondan yeniden hesaplanacak; varsa salonlu Excel'den " +
+                "yüklenen düzeltmeler ve gözetmen görevleri bu atamaya taşınmaz.\n\nDevam edilsin mi?", "Yeniden ata", "Vazgeç", tehlikeli: true))
+            return;
+
+        SalonDagitimi dagitim;
+        try
+        {
+            // Şablon Excel'inde hoca sütunu yoktur — öğretim elemanı sınav listesinden tamamlanır
+            Servis.OgretimElemanlariniDoldur();
+            dagitim = await IsYurutucu.CalistirAsync("Salon dağıtımı yapılıyor (ortak önce, ELM + MEK → T4)…", Servis.SalonlariHesapla);
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Salon ataması başarısız", ex);
+            Durum.DurumYaz("❌ Salon ataması başarısız!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Salon atama hatası:\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        if (dagitim.Bos)
+        {
+            await Diyalog.BilgiAsync("Uyarı", "Şablondan salon dağıtımı üretilemedi.", DurumTuru.Uyari);
+            return;
+        }
+
+        Servis.SalonDagitiminiUygula(dagitim);
+        _bolum = null;
+        _sinif = null;
+        _sekme = 0;
+        Bildirim.Add($"{dagitim.GunSatirlari.Count} ders salona atandı.", Severity.Success);
+        if (dagitim.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Salon Ataması Uyarıları", dagitim.Uyarilar,
+                $"{dagitim.Uyarilar.Count} uyarı var. Salonlar atandı; bu satırları matriste ya da salonlu Excel'de kontrol etmeniz önerilir.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SALONLU EXCEL (eski BtnSalonExport_Click, BtnGozetmenDosyaYukle_Click)
+    // ═══════════════════════════════════════════════════════════════
+
+    private async Task SalonluExcelCikarAsync()
+    {
+        string eksik = Servis.SalonluExcelEksigi();
+        if (eksik != null)
+        {
+            await Diyalog.BilgiAsync("Eksik Bilgi", eksik, DurumTuru.Uyari);
+            return;
+        }
+
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.SalonluExcel, out var sonYol);
+        string yol = await Dosya.KaydedilecekDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = SonDosyaTurleri.SalonluExcel,
+            Baslik = "Salon Atanmış Dosyayı Kaydet",
+            OnerilenAd = $"Salon_Atanmis_{DateTime.Now:yyyyMMdd}.xlsx",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        try
+        {
+            await IsYurutucu.CalistirAsync("Salon atanmış dosya oluşturuluyor…", () => Servis.SalonluExcelYaz(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Salonlu Excel yazılamadı", ex);
+            Durum.DurumYaz("❌ Dosya çıkartılamadı!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Dosya çıkartma hatası:\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        Servis.SalonluExcelYazildi(yol);
+        if (await Diyalog.OnaylaAsync("Dosya Hazır", $"Salon atanmış dosya oluşturuldu:\n\n{System.IO.Path.GetFileName(yol)}\n\n" +
+                "Gün sayfalarında salonlar atanmış (matris) + Sınav Haftası Dağıtım Şablonu sayfası içerir.",
+                "Excel'de aç", "Kapat", tur: DurumTuru.Basari))
+            Dosya.DosyayiAc(yol);
+    }
+
+    private async Task SalonluExcelYukleAsync()
+    {
+        Durum.SonDosyalar.TryGetValue(SonDosyaTurleri.SalonluExcel, out var sonYol);
+        string yol = await Dosya.AcilacakDosyaSecAsync(new DosyaIstegi
+        {
+            Anahtar = "SalonluGeriYukle",
+            Baslik = "Salon Atanmış Dosyayı Seçin (gözetmen ataması için)",
+            Filtre = "Excel Dosyası (*.xlsx)|*.xlsx|Tüm Dosyalar (*.*)|*.*",
+            BaslangicYolu = sonYol
+        });
+        if (yol == null) return;
+
+        SalonluExcelOnizlemesi onizleme;
+        try
+        {
+            onizleme = await IsYurutucu.CalistirAsync("Salon atanmış dosya okunuyor…", () => SalonServisi.SalonluExcelOnizle(yol));
+        }
+        catch (Exception ex)
+        {
+            HataGunlugu.Yaz("Salonlu Excel okunamadı", ex);
+            Durum.DurumYaz("❌ Dosya okunamadı!", DurumTuru.Hata);
+            Durum.Bildir();
+            await Diyalog.BilgiAsync("Hata", $"Dosya okuma hatası:\n{HataMesaji.Anlasilir(ex)}", DurumTuru.Hata);
+            return;
+        }
+
+        if (onizleme.Bos)
+        {
+            Durum.DurumYaz("❌ Salon atanmış dosya okunamadı.", DurumTuru.Hata);
+            Durum.Bildir();
+            string m = "Dosyadan salon atanmış sınav okunamadı.\n('Sınav Günü' matris sayfaları beklenir.)";
+            if (onizleme.Uyarilar.Count > 0) m += "\n\n" + string.Join("\n", onizleme.Uyarilar.Take(12));
+            await Diyalog.BilgiAsync("Dosya Okunamadı", m, DurumTuru.Uyari);
+            return;
+        }
+
+        bool onay = await Diyalog.OnaylaAsync("Salonlu Excel Yükleme Onayı", null, "Dosyayı yükle", "Vazgeç",
+            icerik: @<div class="onizleme-ozeti">
+                <p>Salon atanmış dosya okundu: <b>@onizleme.GunSayisi gün</b>, <b>@onizleme.SinavSayisi sınav</b>, <b>@onizleme.SalonGorevi salon görevi</b>.</p>
+                @if (onizleme.Uyarilar.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@onizleme.Uyarilar.Count satır için uyarı var; yüklemeden sonra listelenir.</MudAlert>
+                }
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                    Mevcut salon ataması bu dosyadakiyle değiştirilir. Ardından 6. adımda gözetmenleri atayın.
+                </MudAlert>
+            </div>,
+            tehlikeli: Durum.SonSonuclar != null);
+        if (!onay) return;
+
+        Servis.SalonluExcelUygula(onizleme, yol);
+        _bolum = null;
+        _sinif = null;
+        Bildirim.Add($"{onizleme.SinavSayisi} sınav (salon atanmış) yüklendi.", Severity.Success);
+        if (onizleme.Uyarilar.Count > 0)
+            await Diyalog.UyarilariGosterAsync("Yükleme Notları", onizleme.Uyarilar,
+                $"{onizleme.Uyarilar.Count} satır için uyarı var. Dosya yüklendi; bu satırları kontrol etmeniz önerilir.");
+    }
+}

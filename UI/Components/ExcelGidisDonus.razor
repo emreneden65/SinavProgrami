@@ -1,0 +1,101 @@
+@inject IDosyaServisi Dosya
+@inject ISnackbar Bildirim
+
+@* Excel gidiş-dönüş kartı (Şablon, Salonlar ve Final'de aynı düzen):
+   1) Excel'i oluştur · 2) Excel'de düzenle (son dosya) · 3) Geri yükle *@
+<section class="kart gidis-donus" aria-label="@Baslik">
+    <div class="kart-basligi">
+        <h2>@Baslik</h2>
+        @if (!string.IsNullOrEmpty(Not))
+        {
+            <span class="kart-notu">@Not</span>
+        }
+    </div>
+    <ol class="gd-adimlari">
+        <li class="gd-adimi">
+            <span class="gd-no" aria-hidden="true">1</span>
+            <div class="gd-icerik">
+                <div class="gd-basligi">@OlusturBasligi</div>
+                <div class="gd-aciklamasi">@OlusturAciklamasi</div>
+                <div class="gd-eylem">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.AutoAwesome"
+                               Disabled="@(OlusturKapaliNedeni != null)" OnClick="Olustur">@OlusturMetni</MudButton>
+                    @if (OlusturKapaliNedeni != null)
+                    {
+                        <span class="gd-neden"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" /> @OlusturKapaliNedeni</span>
+                    }
+                </div>
+            </div>
+        </li>
+        <li class="gd-adimi">
+            <span class="gd-no" aria-hidden="true">2</span>
+            <div class="gd-icerik">
+                <div class="gd-basligi">Excel'de kontrol edin, gerekirse düzenleyin</div>
+                @if (string.IsNullOrEmpty(SonDosya))
+                {
+                    <div class="gd-aciklamasi">Oluşturulan ya da yüklenen dosya burada görünür.</div>
+                }
+                else
+                {
+                    <div class="gd-dosya" title="@SonDosya">
+                        <MudIcon Icon="@Icons.Material.Outlined.Description" Size="Size.Small" />
+                        <span>@System.IO.Path.GetFileName(SonDosya)</span>
+                    </div>
+                    <div class="gd-eylem">
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.OpenInNew" OnClick="ExceldeAc">Excel'de aç</MudButton>
+                        <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.FolderOpen" OnClick="KlasordeGoster">Klasörde göster</MudButton>
+                    </div>
+                }
+            </div>
+        </li>
+        <li class="gd-adimi">
+            <span class="gd-no" aria-hidden="true">3</span>
+            <div class="gd-icerik">
+                <div class="gd-basligi">@GeriYukleBasligi</div>
+                <div class="gd-aciklamasi">@GeriYukleAciklamasi</div>
+                <div class="gd-eylem">
+                    <MudButton Variant="@(OlusturKapaliNedeni == null && string.IsNullOrEmpty(SonDosya) ? Variant.Outlined : Variant.Filled)"
+                               Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile"
+                               Disabled="@(GeriYukleKapaliNedeni != null)" OnClick="GeriYukle">@GeriYukleMetni</MudButton>
+                    @if (GeriYukleKapaliNedeni != null)
+                    {
+                        <span class="gd-neden"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" /> @GeriYukleKapaliNedeni</span>
+                    }
+                </div>
+            </div>
+        </li>
+    </ol>
+</section>
+
+@code {
+    [Parameter] public string Baslik { get; set; } = "Excel ile gidiş-dönüş";
+    [Parameter] public string Not { get; set; }
+
+    [Parameter] public string OlusturBasligi { get; set; }
+    [Parameter] public string OlusturAciklamasi { get; set; }
+    [Parameter] public string OlusturMetni { get; set; }
+    /// <summary>Doluysa oluşturma düğmesi kapalıdır ve yanında bu neden yazar.</summary>
+    [Parameter] public string OlusturKapaliNedeni { get; set; }
+    [Parameter] public EventCallback Olustur { get; set; }
+
+    /// <summary>Son oluşturulan / yüklenen dosyanın tam yolu.</summary>
+    [Parameter] public string SonDosya { get; set; }
+
+    [Parameter] public string GeriYukleBasligi { get; set; }
+    [Parameter] public string GeriYukleAciklamasi { get; set; }
+    [Parameter] public string GeriYukleMetni { get; set; }
+    [Parameter] public string GeriYukleKapaliNedeni { get; set; }
+    [Parameter] public EventCallback GeriYukle { get; set; }
+
+    private void ExceldeAc()
+    {
+        if (!System.IO.File.Exists(SonDosya))
+        {
+            Bildirim.Add("Dosya bulunamadı; taşınmış ya da silinmiş olabilir.", Severity.Warning);
+            return;
+        }
+        Dosya.DosyayiAc(SonDosya);
+    }
+
+    private void KlasordeGoster() => Dosya.KlasordeGoster(SonDosya);
+}

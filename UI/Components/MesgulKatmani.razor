@@ -1,0 +1,22 @@
+@implements IDisposable
+@inject IsYurutucu IsYurutucu
+
+@* Uzun işlem sürerken (Excel okuma/yazma, algoritmalar) arayüzü kilitleyen katman *@
+@if (IsYurutucu.Mesgul)
+{
+    <div class="mesgul-katmani" role="alert" aria-live="assertive" aria-busy="true">
+        <div class="mesgul-kutusu">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Medium" />
+            <div class="mesgul-mesaji">@IsYurutucu.Mesaj</div>
+            <div class="mesgul-alt">Lütfen bekleyin…</div>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => IsYurutucu.Degisti += Yenile;
+
+    private void Yenile() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => IsYurutucu.Degisti -= Yenile;
+}

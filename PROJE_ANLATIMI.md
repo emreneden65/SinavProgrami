@@ -31,12 +31,13 @@ Binalar: **T1** ve **T4** (salon kodları `T1-xxx`, `T4-xxx`).
 
 | Bileşen | Detay |
 |---|---|
-| Dil / Platform | C#, **.NET 8**, **Windows Forms** (`net8.0-windows`) |
+| Dil / Platform | C#, **.NET 10** (`net10.0-windows`) |
+| Arayüz | **Blazor Hybrid**: Windows Forms penceresinde `BlazorWebView` (Edge **WebView2**); bileşen kütüphanesi **MudBlazor 9.11.0**. Önceki Windows Forms arayüzü (`MainForm`) geçiş süresince `--eski-arayuz` ile açılan yedek olarak duruyor |
 | Excel okuma/yazma | **EPPlus 7.7.0** (NonCommercial lisans modunda) |
 | Veritabanı | **SQLite** (`Microsoft.Data.Sqlite`) — exe'nin yanında tek dosya: `SinavDB.db` |
 | Dağıtım | Self-contained publish → taşınabilir ZIP (`yayinla.bat` / `yayinla.ps1`) |
-| Test | **Yok** (test projesi bulunmuyor) |
-| Versiyon kontrolü | Klasörde `.gitignore` var ama **git deposu başlatılmamış** |
+| Test | `Testler/` konsol projesi (bileşen testleri için **bUnit**); `cd Testler && dotnet run` |
+| Versiyon kontrolü | git (yeni arayüz çalışması `yeni-arayuz` dalında) |
 
 > Not: Proje başlangıçta **SQL Server** kullanıyordu, sonra **SQLite**'a taşındı.
 > Kökteki `.sql` dosyaları bu geçişten kalmadır.
@@ -48,10 +49,31 @@ Proje şu an **hatasız derleniyor** (`dotnet build` → 0 hata, 0 uyarı).
 ## 3. Klasör Yapısı
 
 ```
-├── Program.cs                     Giriş noktası: EPPlus lisansı + DB hazırlama + MainForm
-├── MainForm.cs                    ~3800 satır — TÜM arayüz mantığı ve iş akışı burada
-├── MainForm.Designer.cs           WinForms tasarımcı kodu
-├── SinavProgrami.csproj
+├── Program.cs                     Giriş noktası: EPPlus lisansı, tek örnek kilidi, WebView2 denetimi,
+│                                  DB hazırlama; varsayılan yeni arayüz (--eski-arayuz / --deneme)
+├── AnaPencere.cs                  Yeni arayüzün penceresi (BlazorWebView, pencere boyutu, kapanışta kayıt)
+├── MainForm.cs                    ESKİ arayüz (~5000 satır, yedek; --eski-arayuz ile açılır)
+├── MainForm.Designer.cs           Eski arayüzün WinForms tasarımcı kodu
+├── SinavProgrami.csproj           Microsoft.NET.Sdk.Razor
+│
+├── Services/                      Arayüzden bağımsız iş mantığı (MainForm'dan aynı kurallarla taşındı)
+│   ├── CalismaDurumu.cs           Bellekteki tüm çalışma verisi + 7 adım kilidi + durum mesajı
+│   ├── OturumYoneticisi.cs        oturum.json ⇄ çalışma durumu, 15 sn'de bir otomatik kayıt
+│   ├── IsAkisi.cs                 7 adımın tanımı, tamamlanma / kilit kuralları, Genel Bakış özetleri
+│   ├── TakvimServisi.cs, DerslikServisi.cs, DersServisi.cs, OrtakDersServisi.cs,
+│   │   SablonServisi.cs, SalonServisi.cs, GozetmenServisi.cs, FinalServisi.cs (+ Temizle / Sıfırla)
+│   ├── HocaEslemesi.cs, BolumAdlari.cs, AyarlarDeposu.cs (ayarlar.json), VeriKlasoru.cs
+│   └── DosyaServisi.cs, PencereServisi.cs, IsYurutucu.cs (uzun işler arka planda), HataGunlugu.cs
+│
+├── UI/                            Razor bileşenleri
+│   ├── App.razor, ServisKayitlari.cs, Tema.cs (Catppuccin Latte = açık, Mocha = koyu)
+│   ├── Layout/                    Üst çubuk, sol adım menüsü, durum çubuğu
+│   ├── Pages/                     Genel Bakış, Dönem ve Takvim, Derslikler, Dersler, Şablon,
+│   │                              Salonlar, Gözetmenler, Final, Ayarlar
+│   └── Components/                Excel gidiş-dönüş kartı, şablon ızgarası, salon matrisi,
+│                                  hücre düzenleyici, diyaloglar …
+├── wwwroot/                       index.html, css/ (app, tablolar, sablon, sayfalar), js/app.js
+├── Testler/                       Test projesi (eski arayüz testleri + yeni arayüz testleri)
 │
 ├── Models/                        Veri modelleri
 │   ├── Ders.cs                    Bir dersin bir şubesi (bölüm, sınıf, kod, kontenjan, hoca)
@@ -94,7 +116,10 @@ Proje şu an **hatasız derleniyor** (`dotnet build` → 0 hata, 0 uyarı).
 
 ## 4. Uygulamanın İş Akışı (Adım Adım)
 
-Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden sonraki aktif olmaz).
+Yeni arayüzde sol menü bu akışın kendisidir: **1 Dönem ve Takvim · 2 Derslikler · 3 Dersler ·
+4 Şablon · 5 Salonlar · 6 Gözetmenler · 7 Final**. Adımlar, eski arayüzdeki 7 düğme kilidiyle
+(oturum kaydındaki `Butonlar` anahtarları aynen korunur) sıralı açılır; aşağıdaki çizimdeki
+alan adları eski `MainForm`'unkilerdir, yeni arayüzde aynı veriler `CalismaDurumu`'nda durur.
 
 ```
  [Sınav Listesi Excel]                                [Gözetmen Excel]
@@ -147,12 +172,18 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
 ### Adım 3 — Şablonu Geri Yükle
 - **Sınıflar:** `DagitimSablonuOkuyucu`, `SablonDogrulayici`
 - Doldurulmuş şablonun "Sınav Haftası Dağıtım Şablonu" sayfası okunur → takvim + salonsuz yerleşim.
-- Takvimin gün sayısına göre Vize/Final tipi otomatik tahmin edilir.
-- Yerleşim uygulama içinde **Şablon** sekmesindeki grid'de gösterilir ve **burada da düzenlenebilir**
-  (ders seçme, autocomplete, Delete ile silme, Ctrl+tekerlek zoom).
-- `SablonDogrulayici` her düzenlemeden sonra kural ihlallerini (bölüm+sınıf çakışması, ortak ders
-  bütünlüğü, sınıf-saat kuralı, dinlenme molası, slot kapasite aşımı) bulup hücreleri boyar.
-  İhlaller **engelleyici değildir**, sadece uyarıdır.
+- Takvim şablondakiyle değiştirilir; sınav türü gün sayısından tahmin edilmez (seçim korunur).
+- Yerleşim **4 · Şablon** sayfasındaki ızgarada gösterilir ve **burada da düzenlenebilir**
+  (yazarak ders seçme / taşıma, A/B/C kontenjan, D notu, Delete ile silme ve geri alma,
+  Ctrl+tekerlek yakınlaştırma).
+- `SablonDogrulayici` her düzenlemeden sonra kural ihlallerini (bölüm içi çakışma, ortak ders
+  bütünlüğü, sınıf-saat kuralı, dinlenme molası, slot kapasite aşımı, takvim dışı yerleşim) bulup
+  hücreleri kırmızıya boyar; ihlaller türüne göre listelenir ve tür tür gizlenebilir.
+  İhlaller **engelleyici değildir**, sadece uyarıdır. (Ortak ders denetimi dersleri adına göre
+  eşler; dağıtım ise ortak dersi koduna göre belirlediği için bölüme özel aynı adlı dersler de
+  bu türde görünebilir.)
+- Otomatik dağıtım ders **kodu** olmayan şubeleri atlar (şablondan geri yüklenen listede kod
+  yoktur); yeni arayüz bu durumda kaç şubenin neden alınmadığını söyler.
 
 ### Adım 4 — Salonları Ata + Salonlu Excel Çıkart
 - **Sınıflar:** `GunlukSalonDagitici`, `GunSalonMatrisExportHelper`
@@ -193,16 +224,18 @@ Arayüzdeki butonlar adım kilitleriyle sıralı açılır (bir adım bitmeden s
 **Genel Dosya** şu sayfaları içerir: *Sınav Programı Matrisi, Salon Doluluk Özeti, Slot Bazlı Sınav
 Planı, Sınav Programı Formu, Sınav Programı Formu (Gözetmenli), Görev Çizelgesi*.
 
-### Yan Paneller (sol taraf, açılır/kapanır "akordeon")
-- **Ders Listesi** — yüklenen dersler, inline düzenleme, silme, arama.
-- **Havuz / Ortak** — ortak dersleri **manuel** işaretleme (yapılırsa otomatik tespit devre dışı
-  kalır) ve şube havuzları tanımlama.
-- **Uygulamalı Dersler** — lab/çizim salonu gerektiren dersleri işaretleme
-  (grid'in kod adı tarihsel olarak `dgvOverbooking`).
-- **Hata Oranı** — bölüm başına % gelmeyecek öğrenci.
-- **Sınav Takvimi** — Vize/Final tipi, başlangıç tarihi, gün ve saat seçimi
-  (varsayılan saatler 09:00, 11:00, 13:00, 15:00, 17:00).
-- **Gözetmenler** — gözetmen listesi ve ağırlıklar.
+### Yardımcı ekranlar (yeni arayüzde)
+- **3 · Dersler** sayfasının sekmeleri: **Ders listesi** (satır içi düzenleme, ekleme, silme, arama),
+  **Uygulamalı dersler** (lab / çizim salonu gerektirenler), **Hata oranı** (bölüm başına % gelmeyecek
+  öğrenci), **Ortak dersler** (açık bir "elle belirle" anahtarıyla; elle seçim yapılırsa otomatik tespit
+  devre dışı kalır) ve **Havuzlar** (şube havuzları).
+- **1 · Dönem ve Takvim** — öğretim yılı ve dönem, sınav türü, başlangıç tarihi, gün sayısı, çok aylı
+  takvim ve gün başına saat seçimi (varsayılan saatler 09:00, 11:00, 13:00, 15:00, 17:00).
+- **6 · Gözetmenler** — gözetmen listesi, ağırlıklar, ekleme / silme ve atama.
+- **Ayarlar** — tema, veri klasörleri, Temizle, Uygulamayı sıfırla.
+
+Eski arayüzde bunlar sol taraftaki açılır/kapanır panellerdeydi (uygulamalı ders grid'inin kod adı
+tarihsel olarak `dgvOverbooking`).
 
 ---
 
@@ -221,7 +254,7 @@ tabloları oluşturur.
 
 **Derslikler:** Her okulun derslikleri farklı olduğu için program salon listesiyle gelmez.
 Kullanıcı "🏫 Derslik Listesi Yükle" ile Excel'den yükler (`DerslikListesiOkuyucu`);
-liste `MainForm._derslikler`'de tutulur ve oturum kaydında (`%AppData%\SinavProgrami\oturum.json`)
+liste `CalismaDurumu.Derslikler`'de (eski arayüzde `MainForm._derslikler`) tutulur ve oturum kaydında (`%AppData%\SinavProgrami\oturum.json`)
 saklanır. Şablonun gün sayfalarındaki salon sütunları da bu listeden kurulur.
 
 ---
@@ -238,12 +271,11 @@ Kod incelemesinden çıkan, projeyi devralan kişinin bilmesi gereken noktalar:
    vize + final boyunca kim kaç görev aldı, bir sonraki atamada dikkate alınacaktı. Şu an her
    "Gözetmen Ata" sıfırdan başlıyor; önceki sınav dönemleri hesaba katılmıyor.
 
-2. **Gözetmen listesi kalıcı değil.** Gözetmenler ve elle girilen ağırlıklar sadece bellekte;
-   uygulama kapanınca kayboluyor, her seferinde Excel'den yeniden yüklenmesi gerekiyor.
+2. ~~Gözetmen listesi kalıcı değil.~~ **Giderildi:** gözetmenler ve ağırlıklar oturum kaydında
+   (`oturum.json`) saklanıyor.
 
-3. **Ayarlar kalıcı değil.** Havuz tanımları, manuel ortak ders seçimleri, uygulamalı ders işaretleri
-   ve hata oranları bellekte tutuluyor; uygulama kapanınca kayboluyor. (Kalıcı olan tek şey
-   `hoca_eslemesi.json`.)
+3. ~~Ayarlar kalıcı değil.~~ **Giderildi:** havuz tanımları, elle ortak ders seçimleri, uygulamalı ders
+   işaretleri, hata oranları ve öğretim dönemi oturum kaydında saklanıyor.
 
 4. **Salon düzenleme ekranı yok.** Derslik eklemek/kapasite değiştirmek için derslik Excel'i
    düzenlenip yeniden yüklenir.
@@ -254,9 +286,8 @@ Kod incelemesinden çıkan, projeyi devralan kişinin bilmesi gereken noktalar:
    mesajı "Hata payını girip Salonları Ata'ya basın" diyor. Boş şablonla ilerleyen kullanıcı için
    bu beklenti karşılanmıyor olabilir — doğrulanması gerekir.
 
-6. **"Dönem" bilgisi boş gidiyor.** `ExcelMatrisExportHelper.MatrisExcelOlustur(..., donem: "")`
-   her zaman boş string ile çağrılıyor; çıktı başlıklarında Güz/Bahar ya da Vize/Final yazmıyor
-   olabilir.
+6. ~~"Dönem" bilgisi boş gidiyor.~~ **Giderildi:** çıktı başlıkları seçilen öğretim yılı, dönem ve
+   sınav türünden oluşuyor (ör. "2026-2027 ÖĞRETİM YILI GÜZ DÖNEMİ VİZE SINAV PROGRAMI").
 
 ### 6.2 Ölü / artık kod
 
@@ -273,44 +304,46 @@ Kod incelemesinden çıkan, projeyi devralan kişinin bilmesi gereken noktalar:
 
 ### 6.3 Kod kalitesi / bakım
 
-- **`MainForm.cs` çok büyük (~3800 satır, ~195 KB).** Arayüz, iş akışı, şablon grid düzenleme,
-  takvim, gözetmen işlemleri hepsi tek sınıfta. Bölünmesi (ör. `TakvimPaneli`, `SablonGrid`,
-  `GozetmenPaneli` gibi ayrı sınıflara) bakımı çok kolaylaştırır.
-- **Test yok.** Algoritmalar (özellikle gözetmen dengeleme ve salon dağıtımı) karmaşık ve kural
-  ağırlıklı; birim testler olmadan değişiklik yapmak riskli.
-- **Git yok.** Önce `git init` yapılıp mevcut hâl commit'lenmeli.
+- **`MainForm.cs` çok büyük (~5000 satır).** Yeni arayüzde bu mantık `Services/` altındaki
+  servislere ve `UI/` altındaki sayfalara bölündü; eski arayüzle aynı sonucu verdikleri eşdeğerlik
+  testleriyle doğrulanıyor. `MainForm` yalnızca yedek olarak duruyor ve geçiş tamamlanınca
+  kaldırılacak.
+- **Testler.** `Testler/` projesinde eski arayüz testleri ile yeni arayüzün servis, sayfa (bUnit) ve
+  eşdeğerlik testleri var. Testler gerçek oturum kaydına dokunmaz (geçici klasör kullanır).
 - **Sabit (hard-coded) değerler:** Bölüm listesi, ders kodu önekleri, T4 binası tercihi, saat-sınıf
   eşlemesi, varsayılan saatler kodun içinde. Fakülte değişirse kod değişmeli. Ayrıca bu listeler
   birden fazla dosyada tekrarlanıyor (`SablonDagitimAlgoritmasi`, `CekilmisDerslerExportHelper`,
   `GunSalonMatrisExportHelper`, `MainForm.BolumKisalt`…).
 - **İsimlendirme tutarsızlıkları:** Bölüm kısaltması bazı yerlerde `EEM`, bazı yerlerde `ELM`;
   `INS` / `İNŞ`. Uygulamalı ders grid'inin adı `dgvOverbooking`.
-- **Uzun işlemler UI thread'inde** çalışıyor (`Application.DoEvents()` ile); büyük dosyalarda
-  pencere donabilir.
+- **Uzun işlemler** eski arayüzde UI thread'inde çalışıyor (`Application.DoEvents()` ile); yeni
+  arayüzde arka planda çalışır, bu sırada arayüz kilitlenir ve otomatik kayıt bekler.
 - **Doküman tutarsızlıkları:**
   - `Models/SinavTipi.cs` içindeki enum yorumu Final için "12 sınav günü" diyor, kod 10 gün üretiyor.
-  - Buton/mesaj numaralandırması tutarlı değil (mesajlarda "3) Şablonu Yükle", "4) Salonları Ata"
-    gibi eski numaralar geçiyor).
-  - `NASIL_CALISTIRILIR.md` proje klasörünü `Elfreni` olarak anıyor; mevcut klasör adı farklı.
+  - Eski arayüzün mesajlarında "3) Şablonu Yükle", "4) Salonları Ata" gibi eski numaralar geçiyor;
+    yeni arayüzün mesajları sol menüdeki adım numaralarını kullanır.
 
 ---
 
 ## 7. Geliştirmeye Başlarken
 
 ```powershell
-dotnet build          # derle
-dotnet run            # çalıştır (DB: bin\Debug\net8.0-windows\SinavDB.db)
-.\yayinla.bat         # taşınabilir ZIP üret
+dotnet build                     # derle
+dotnet run                       # yeni arayüz, gerçek veri (DB: bin\Debug\net10.0-windows\SinavDB.db)
+dotnet run -- --deneme           # yeni arayüz, gerçek verinin kopyasıyla (%AppData%\SinavProgrami\Deneme)
+dotnet run -- --eski-arayuz      # eski arayüz (yedek)
+cd Testler; dotnet run           # testler
+.\yayinla.bat                    # taşınabilir ZIP üret
 ```
 
-Gereksinim: **.NET 8 SDK**, Windows.
+Gereksinim: **.NET 10 SDK**, Windows, Microsoft Edge WebView2 (Windows 11'de hazır gelir).
 
 **Önerilen öncelik sırası:**
-1. `git init` + ilk commit (mevcut çalışan hâli kayıt altına al).
+1. Yeni arayüz kullanımda onaylanınca eski arayüzü (`MainForm` ve ona bağlı testler) kaldır.
 2. Ölü kodu temizle (`SinavDagitimAlgoritma`, `HazirSinavExcelOkuyucu`, kullanılmayan DB metotları,
    gizli kontroller) — kod tabanı belirgin şekilde küçülür.
 3. Gözetmen görev geçmişini DB'ye bağla (6.1-1 ve 6.1-2) — projenin tasarımda olup bitmemiş
    en önemli özelliği.
 4. Ayarların (havuz, ortak, uygulamalı, hata oranı) kalıcı saklanması.
 5. Hata oranının salon atamasına etkisini netleştir (6.1-5).
-6. `MainForm.cs`'yi parçalara ayır, algoritmalar için birim test ekle.
+6. Algoritmalar (salon dağıtımı, gözetmen dengeleme) için doğrudan birim testleri çoğalt.
