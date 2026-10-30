@@ -107,15 +107,17 @@
     gap: 8px;
 }
 
+/* --tur-renk her çipte türün rengiyle (SablonServisi.TurRengi) satır içinde verilir */
 button.ihlal-turu {
+    --tur-renk: var(--hata-yazi);
     display: inline-flex;
     align-items: center;
     justify-content: flex-start;
     gap: 6px;
     padding: 4px 6px 4px 10px;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--hata-yazi) 40%, transparent);
-    background: color-mix(in srgb, var(--hata-yazi) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tur-renk) 45%, transparent);
+    background: color-mix(in srgb, var(--tur-renk) 10%, transparent);
     color: var(--mud-palette-text-primary);
     font: inherit;
     font-size: 12.5px;
@@ -124,11 +126,11 @@ button.ihlal-turu {
 }
 
 button.ihlal-turu:hover {
-    background: color-mix(in srgb, var(--hata-yazi) 16%, transparent);
+    background: color-mix(in srgb, var(--tur-renk) 18%, transparent);
 }
 
 button.ihlal-turu .mud-icon-root {
-    color: var(--hata-yazi);
+    color: var(--tur-renk);
 }
 
 button.ihlal-turu .sayac {
@@ -167,7 +169,18 @@ button.ihlal-turu.gizli .mud-icon-root {
 }
 
 .ihlal-grubu-basligi {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 650;
+}
+
+.tur-noktasi {
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--tur-renk);
 }
 
 .ihlal-grubu-aciklamasi {
@@ -440,8 +453,14 @@ button.yakinlastirma-orani:hover {
     background: var(--sablon-ihlal-zemin);
 }
 
+/* --ihlal-seridi hücrede satır içinde verilir: her ihlal türü için türün renginde bir 3px şerit */
 .sablon-izgarasi td.ders.ihlal {
-    box-shadow: inset 3px 0 0 var(--hata-yazi);
+    box-shadow: var(--ihlal-seridi, inset 3px 0 0 var(--hata-yazi));
+}
+
+/* Etkin ihlalli ders hücresi: odak çerçevesi şeritlerin üstünde, ikisi birlikte görünür */
+.sablon-izgarasi td.ders.ihlal.aktif:not(.duzenleniyor) {
+    box-shadow: inset 0 0 0 2px var(--mud-palette-primary), var(--ihlal-seridi, inset 3px 0 0 var(--hata-yazi));
 }
 
 .sablon-izgarasi td.secili,

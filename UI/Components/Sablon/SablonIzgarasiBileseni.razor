@@ -50,9 +50,10 @@
                         var hucre = satir.Hucreler[g];
                         var ihlaller = GorunenIhlaller(hucre);
                         string ihlalMetni = ihlaller.Count == 0 ? null : "⚠ " + string.Join("\n⚠ ", ihlaller.Select(i => i.Mesaj));
+                        string seritStili = SeritStili(ihlaller);
                         for (int k = 0; k < 7; k++)
                         {
-                            @HucreCiz(satir, g, k, hucre, ihlalMetni)
+                            @HucreCiz(satir, g, k, hucre, ihlalMetni, seritStili)
                         }
                     }
                 </tr>
@@ -135,7 +136,15 @@
         => GizliTurler == null || GizliTurler.Count == 0 ? hucre.Ihlaller
             : hucre.Ihlaller.Where(i => !GizliTurler.Contains(i.Tur)).ToList();
 
-    private RenderFragment HucreCiz(SablonSatiri satir, int g, int k, SablonHucresi hucre, string ihlalMetni) => __builder =>
+    /// <summary>Ders hücresinin solundaki şeritler: görünen her ihlal türü için türün renginde 3px (paneldeki çiplerle aynı renk).</summary>
+    private static string SeritStili(List<SablonIhlali> ihlaller)
+    {
+        if (ihlaller.Count == 0) return null;
+        var turler = ihlaller.Select(i => i.Tur).Distinct().OrderBy(t => t).ToList();
+        return "--ihlal-seridi: " + string.Join(", ", turler.Select((t, i) => $"inset {(i + 1) * 3}px 0 0 {SablonServisi.TurRengi(t)}"));
+    }
+
+    private RenderFragment HucreCiz(SablonSatiri satir, int g, int k, SablonHucresi hucre, string ihlalMetni, string seritStili) => __builder =>
     {
         int r = satir.Sira, c = g * SutunSayisi + k;
         bool duzenleniyor = _duzenlenen is { } d && d.R == r && d.C == c;
@@ -187,6 +196,7 @@
         if (ihlalli) baslik = ihlalMetni + (baslik != null ? "\n\n" + baslik : "");
 
         <td id="@HucreId(r, c)" class="@sinif" data-r="@r" data-c="@c" tabindex="@(_aktif == (r, c) ? 0 : -1)" title="@baslik"
+            style="@(ihlalli && k == DersSutunu ? seritStili : null)"
             role="gridcell" aria-selected="@(_secim.Contains((r, c)) ? "true" : "false")">
             @if (duzenleniyor && k == DersSutunu)
             {

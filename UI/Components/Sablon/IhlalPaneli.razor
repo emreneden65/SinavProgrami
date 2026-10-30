@@ -37,6 +37,7 @@
             {
                 bool gizli = GizliTurler?.Contains(tur.Tur) == true;
                 <button type="button" class="ihlal-turu @(gizli ? "gizli" : "")" aria-pressed="@(gizli ? "false" : "true")"
+                        style="--tur-renk: @SablonServisi.TurRengi(tur.Tur)"
                         title="@($"{SablonServisi.TurAciklamasi(tur.Tur)}\n\n{(gizli ? "Göstermek" : "Gizlemek")} için tıklayın.")"
                         @onclick="() => TurGizlendi.InvokeAsync((tur.Tur, !gizli))">
                     <MudIcon Icon="@(gizli ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)" Size="Size.Small" />
@@ -53,7 +54,10 @@
                     @foreach (var tur in _turler.Where(t => GizliTurler?.Contains(t.Tur) != true))
                     {
                         <div class="ihlal-grubu">
-                            <div class="ihlal-grubu-basligi">@SablonServisi.TurAdi(tur.Tur) <span class="soluk">(@tur.Mesajlar.Count)</span></div>
+                            <div class="ihlal-grubu-basligi">
+                                <i class="tur-noktasi" style="--tur-renk: @SablonServisi.TurRengi(tur.Tur)" aria-hidden="true"></i>
+                                @SablonServisi.TurAdi(tur.Tur) <span class="soluk">(@tur.Mesajlar.Count)</span>
+                            </div>
                             <div class="ihlal-grubu-aciklamasi">@SablonServisi.TurAciklamasi(tur.Tur)</div>
                             <ul class="ihlal-listesi">
                                 @foreach (var m in tur.Mesajlar)

@@ -438,6 +438,17 @@ namespace SinavProgrami.Services
             _ => "Yerleşimin gün/saati takvimde seçili değil; bu yerleşim ızgarada görünmez."
         };
 
+        /// <summary>Türün arayüz rengi (app.css'teki --ihlal-* değişkenleri; açık / koyu temaya göre değişir).</summary>
+        public static string TurRengi(IhlalTuru tur) => tur switch
+        {
+            IhlalTuru.BolumIciCakisma => "var(--ihlal-bolum-ici)",
+            IhlalTuru.OrtakDers => "var(--ihlal-ortak-ders)",
+            IhlalTuru.SinifSaat => "var(--ihlal-sinif-saat)",
+            IhlalTuru.DinlenmeMolasi => "var(--ihlal-dinlenme)",
+            IhlalTuru.KapasiteAsimi => "var(--ihlal-kapasite)",
+            _ => "var(--ihlal-takvim-disi)"
+        };
+
         /// <summary>Bir satırın bölümünde seçilebilecek dersler (kontenjanı olan ders + sınıf çiftleri, sınıf ve ada göre).</summary>
         public List<(string DersAdi, int Sinif)> DersSecenekleri(string bolumTam)
             => _d.Dersler

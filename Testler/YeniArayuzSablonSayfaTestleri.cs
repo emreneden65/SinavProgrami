@@ -40,6 +40,12 @@ static class YeniArayuzSablonSayfaTestleri
             Dogrula(sayfa.FindAll("td.kapali").Count > 0 && sayfa.FindAll("td.ihlal").Count > 0, "Kapalı / ihlalli hücre yok.");
             var turler = sayfa.FindAll("button.ihlal-turu").Select(b => b.TextContent).ToList();
             Dogrula(turler.Any(x => x.Contains("Ortak ders bütünlüğü")) && turler.Any(x => x.Contains("Sınıf-saat kuralı")), string.Join(" | ", turler));
+            // Her tür kendi renginde: çip ve ızgaradaki ders hücresinin şeridi aynı --ihlal-* değişkenini kullanır
+            var ortakCip = sayfa.FindAll("button.ihlal-turu").First(b => b.TextContent.Contains("Ortak ders bütünlüğü"));
+            Dogrula(ortakCip.GetAttribute("style")?.Contains("var(--ihlal-ortak-ders)") == true, ortakCip.GetAttribute("style"));
+            var seritler = sayfa.FindAll("td.ders.ihlal").Select(h => h.GetAttribute("style") ?? "").ToList();
+            Dogrula(seritler.Count > 0 && seritler.All(s => s.Contains("--ihlal-seridi: inset 3px 0 0 var(--ihlal-")), string.Join(" | ", seritler.Take(3)));
+            Dogrula(seritler.Any(s => s.Contains("var(--ihlal-ortak-ders)")), "Ortak ders şeridi yok.");
             Dogrula(sayfa.Markup.Contains("Salonlar bu şablondan atandı") == (durum.SonSonuclar != null), "Salon ataması notu yanlış.");
         }));
 

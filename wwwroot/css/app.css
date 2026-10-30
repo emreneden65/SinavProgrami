@@ -22,6 +22,14 @@
     --hata-yazi: #B00D30;
     --bilgi-yazi: #0A6FA8;
 
+    /* Şablon ihlal türleri — mavi (seçim rengi) bilerek kullanılmaz */
+    --ihlal-takvim-disi: #6C6F85;   /* gri */
+    --ihlal-bolum-ici: #B00D30;     /* kırmızı */
+    --ihlal-ortak-ders: #8839EF;    /* mor */
+    --ihlal-sinif-saat: #0F7177;    /* turkuaz */
+    --ihlal-dinlenme: #A86410;      /* kehribar */
+    --ihlal-kapasite: #C11C84;      /* pembe */
+
     --vurgu-zemin: rgba(30, 102, 245, 0.08);
     --kart-golge: 0 1px 2px rgba(76, 79, 105, 0.05), 0 1px 3px rgba(76, 79, 105, 0.07);
     --katman-zemin: rgba(76, 79, 105, 0.28);
@@ -41,6 +49,13 @@
     --uyari-yazi: #F9E2AF;
     --hata-yazi: #F38BA8;
     --bilgi-yazi: #89DCEB;
+
+    --ihlal-takvim-disi: #A6ADC8;
+    --ihlal-bolum-ici: #F38BA8;
+    --ihlal-ortak-ders: #CBA6F7;
+    --ihlal-sinif-saat: #94E2D5;
+    --ihlal-dinlenme: #F9E2AF;
+    --ihlal-kapasite: #F28FD0;
 
     --vurgu-zemin: rgba(137, 180, 250, 0.12);
     --kart-golge: none;
